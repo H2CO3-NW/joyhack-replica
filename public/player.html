@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>JoyHack Player Engine</title>
+    <script src="http://127.0.0.1:3000/socket.io/socket.io.js"></script>
+    <!-- 引入 Tone.js 用于 Phase Vocoder PitchShift 变调 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { width: 100%; height: 100%; background-color: #000000; color: #fff; font-family: "Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif; overflow: hidden; }
+        
+        #canvasBg { position: absolute; top:0; left:0; width: 100%; height: 100%; z-index: 1; display: block; pointer-events: none; }
+        video { position: absolute; top:0; left:0; width: 100%; height: 100%; object-fit: contain; z-index: 2; background: transparent; }
+        
+        .hud { position: absolute; top: 20px; left: 20px; font-size: 24px; font-weight: bold; color: #00ffff; text-shadow: 0 0 10px #000; z-index: 10; pointer-events: none; }
+        .song-info { position: absolute; top: 55px; left: 20px; font-size: 15px; color: #aaa; text-shadow: 0 0 5px #000; z-index: 10; }
+
+        .karaoke-display { 
+            position: absolute; bottom: 40px; left: 5%; width: 90%;
+            display: flex; flex-direction: column; justify-content: flex-end; gap: 12px;
+            z-index: 15; pointer-events: none; transition: height 0.2s ease;
+        }
+
+        .lyric-row { 
+            font-size: 0;
+            height: 80px; line-height: 80px;
+            width: 100%; white-space: nowrap; transition: opacity 0.2s ease;
+        }
+        .row-align-left { text-align: left; }
+        .row-align-center { text-align: center; }
+        .row-align-right { text-align: right; }
+        .row-sub { text-align: center; } 
+
+        ruby { ruby-position: over; text-align: center; }
+        rt { font-size: 20px; font-weight: bold; line-height: 1.0; }
+
+        .karaoke-word-wrapper { 
+            position: relative; display: inline-block; line-height: 1.1; margin: 0; padding: 0; 
+            font-size: 52px; font-weight: 900; letter-spacing: 0px; white-space: pre;
+            vertical-align: bottom;
+        }
+        .row-sub .karaoke-word-wrapper {
+            font-size: 44px;
+        }
+
+        .karaoke-word-base { font-weight: 900; paint-order: stroke fill; white-space: pre; }
+        .karaoke-word-active {
+            position: absolute; top: 0; left: 0;
+            font-weight: 900; paint-order: stroke fill;
+            clip-path: polygon(0 0, var(--clip, 0%) 0, var(--clip, 0%) 100%, 0 100%);
+            will-change: clip-path; white-space: pre;
+        }
+
+        .control-bar-trigger { position: absolute; bottom: 0; left: 0; width: 100%; height: 70px; z-index: 30; }
+        .control-bar { 
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 50px; 
+            background: rgba(0,0,0,0.85); display: flex; align-items: center; 
+            padding: 0 20px; gap: 15px; border-top: 1px solid #333;
+            transform: translateY(100%); transition: transform 0.3s ease, opacity 0.3s ease;
+            opacity: 0; pointer-events: auto;
+        }
+        .control-bar-trigger:hover .control-bar, .control-bar:hover { transform: translateY(0); opacity: 1; }
+
+        .play-btn { background: #00ffff; color: #000; border: none; padding: 6px 15px; font-weight: bold; cursor: pointer; border-radius: 4px; }
+        .play-btn:disabled { background: #555; color: #888; cursor: not-allowed; }
+        .time-display { font-family: monospace; font-size: 16px; color: #00ffff; min-width: 120px; }
+        .progress-container { flex: 1; height: 8px; background: #333; border-radius: 4px; overflow: hidden; cursor: pointer; position: relative; }
+        .progress-bar { width: 0%; height: 100%; background: #00ffff; }
+        .volume-container { display: flex; align-items: center; gap: 8px; color: #00ffff; font-size: 14px; }
+        .volume-slider { width: 80px; accent-color: #00ffff; cursor: pointer; }
+
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7); z-index: 100; display: none;
+            justify-content: center; align-items: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-card {
+            background: #222; border: 1px solid #444; border-radius: 8px;
+            width: 520px; padding: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.8);
+            position: relative;
+        }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+        .modal-title { font-size: 18px; font-weight: bold; color: #00ffff; }
+        .modal-close { background: none; border: none; color: #aaa; font-size: 20px; cursor: pointer; }
+        .modal-close:hover { color: #fff; }
+        .form-group { margin-bottom: 20px; }
+        .form-label { display: block; font-size: 14px; color: #ccc; margin-bottom: 8px; }
+        .input-group { display: flex; gap: 10px; }
+        .input-text { flex: 1; background: #111; border: 1px solid #444; border-radius: 4px; padding: 8px 12px; color: #00ffff; font-size: 13px; }
+        .btn-browse { background: #00ffff; color: #000; border: none; padding: 8px 16px; font-weight: bold; border-radius: 4px; cursor: pointer; }
+        .btn-browse:hover { background: #00cccc; }
+        .btn-copy { background: #ffcc00; color: #000; border: none; padding: 8px 16px; font-weight: bold; border-radius: 4px; cursor: pointer; }
+        .btn-copy:hover { background: #e6b800; }
+        .btn-open-admin { width: 100%; background: #ff007f; color: #fff; border: none; padding: 12px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 14px; margin-top: 10px; }
+        .btn-open-admin:hover { background: #e00070; }
+
+        #toastContainer { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+        .toast { background: rgba(0, 255, 255, 0.95); color: #000; padding: 12px 20px; font-weight: bold; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-size: 15px; opacity: 0; transform: translateY(-20px); transition: all 0.3s ease; }
+        .toast.show { opacity: 1; transform: translateY(0); }
+    </style>
+</head>
+<body>
+    <div id="toastContainer"></div>
+    <canvas id="canvasBg"></canvas>
+    <video id="videoPlayer" style="display:none;" crossorigin="anonymous"></video>
+    <audio id="vocalAudio" style="display:none;" crossorigin="anonymous"></audio>
+    
+    <div class="hud" id="hud">等待点歌... [状态: 停止]</div>
+    <div class="song-info" id="songInfo"></div>
+
+    <div class="karaoke-display" id="karaokeDisplay"></div>
+
+    <div class="control-bar-trigger">
+        <div class="control-bar">
+            <button class="play-btn" id="playBtn" onclick="togglePlay()">播放</button>
+            <span class="time-display" id="timeDisplay">00:00 / 00:00</span>
+            <div class="progress-container" onclick="seek(event)">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div class="volume-container">
+                <span>音量</span>
+                <input type="range" min="0" max="1" step="0.01" value="1" class="volume-slider" id="volumeSlider" oninput="setVolume(this.value)">
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="modal-title">⚙ 选项 / 设置</div>
+                <button class="modal-close" onclick="closeSettingsModal()">✕</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">曲库文件夹路径：</label>
+                <div class="input-group">
+                    <input type="text" class="input-text" id="songsDirInput" readonly placeholder="正在获取曲库路径...">
+                    <button class="btn-browse" onclick="browseSongsDir()">浏览...</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">同一 Wi-Fi 下手机/设备点歌地址：</label>
+                <div class="input-group">
+                    <input type="text" class="input-text" id="lanUrlInput" readonly placeholder="检测网络中...">
+                    <button class="btn-copy" onclick="copyLanUrl()">复制 URL</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">快捷操作：</label>
+                <button class="btn-open-admin" onclick="openAdminWeb()">打开网页点歌后台 (http://localhost:3000/admin)</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const { ipcRenderer, clipboard, shell } = require('electron');
+    const fs = require('fs');
+    const path = require('path');
+    const iconv = require('iconv-lite');
+    
+    const SERVER_ORIGIN = 'http://127.0.0.1:3000';
+    const socket = io(SERVER_ORIGIN);
+
+    const video = document.getElementById('videoPlayer');
+    const vocalAudio = document.getElementById('vocalAudio');
+    const hud = document.getElementById('hud');
+    const songInfo = document.getElementById('songInfo');
+    const karaokeDisplay = document.getElementById('karaokeDisplay');
+    const timeDisplay = document.getElementById('timeDisplay');
+    const progressBar = document.getElementById('progressBar');
+    const playBtn = document.getElementById('playBtn');
+    const volumeSlider = document.getElementById('volumeSlider');
+    const settingsModal = document.getElementById('settingsModal');
+    const songsDirInput = document.getElementById('songsDirInput');
+    const lanUrlInput = document.getElementById('lanUrlInput');
+
+    let currentMetadata = {};
+    let parsedPhrases = [];
+    let isPlayingQueue = false;
+    let isVocalEnabled = false;
+    let currentPitch = 0;
+
+    let tonePitchShiftNode = null;
+    let toneVideoSource = null;
+    let toneVocalSource = null;
+    let isToneInitialized = false;
+
+    let activeMainRowsCount = -1;
+    let activeHasSubSlot = false;
+
+    const canvas = document.getElementById('canvasBg');
+    const ctx = canvas.getContext('2d');
+    
+    function resizeCanvas() { 
+        canvas.width = window.innerWidth; 
+        canvas.height = window.innerHeight; 
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    let particles = Array.from({length: 60}, () => ({
+        x: Math.random() * window.innerWidth, 
+        y: Math.random() * window.innerHeight,
+        r: Math.random() * 3 + 1.5, 
+        dx: (Math.random() - 0.5) * 1.5, 
+        dy: (Math.random() - 0.5) * 1.5,
+        color: Math.random() > 0.5 ? '#00ffff' : '#ff007f'
+    }));
+
+    function drawParticles() {
+        ctx.fillStyle = 'rgba(0, 0, 10, 0.3)'; 
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        particles.forEach(p => {
+            ctx.beginPath(); 
+            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); 
+            ctx.fillStyle = p.color; 
+            ctx.fill();
+            
+            p.x += p.dx; 
+            p.y += p.dy;
+            if(p.x < 0 || p.x > canvas.width) p.dx *= -1;
+            if(p.y < 0 || p.y > canvas.height) p.dy *= -1;
+        });
+        requestAnimationFrame(drawParticles);
+    }
+    drawParticles();
+
+    async function initToneEngine() {
+        if (isToneInitialized) return;
+        try {
+            if (typeof Tone === 'undefined') {
+                console.warn("Tone.js 库未加载，回退至原生音频流程");
+                return;
+            }
+
+            await Tone.start();
+
+            tonePitchShiftNode = new Tone.PitchShift({
+                pitch: 0,
+                windowSize: 0.08,
+                delayTime: 0,
+                feedback: 0
+            }).toDestination();
+
+            toneVideoSource = Tone.getContext().createMediaElementSource(video);
+            toneVocalSource = Tone.getContext().createMediaElementSource(vocalAudio);
+
+            Tone.connect(toneVideoSource, tonePitchShiftNode);
+            Tone.connect(toneVocalSource, tonePitchShiftNode);
+
+            isToneInitialized = true;
+        } catch (e) {
+            console.error("初始化 Tone.js 引擎失败:", e);
+        }
+    }
+
+    function applyPitchShift(pitchVal) {
+        currentPitch = pitchVal;
+
+        video.playbackRate = 1.0;
+        vocalAudio.playbackRate = 1.0;
+
+        if (isToneInitialized && tonePitchShiftNode) {
+            tonePitchShiftNode.pitch = pitchVal;
+        }
+
+        updateHudDisplay();
+    }
+
+    function updateHudDisplay() {
+        if (!currentMetadata.title) return;
+        const pitchStr = currentPitch > 0 ? `+${currentPitch}` : `${currentPitch}`;
+        hud.innerText = `${currentMetadata.title} [Key: ${currentPitch === 0 ? '原调' : pitchStr}] [模式: ${isVocalEnabled ? '原唱' : '伴唱'}]`;
+    }
+
+    socket.on('broadcast-pitch', (pitchVal) => {
+        applyPitchShift(pitchVal);
+    });
+
+    function showToast(message) {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.innerText = message;
+        container.appendChild(toast);
+
+        setTimeout(() => toast.classList.add('show'), 10);
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, 2500);
+    }
+
+    async function loadSettingsConfig() {
+        try {
+            const resDir = await fetch(`${SERVER_ORIGIN}/api/config/songs-dir`);
+            if (resDir.ok) {
+                const dataDir = await resDir.json();
+                songsDirInput.value = dataDir.songsDir || "未设置";
+            }
+            const resNet = await fetch(`${SERVER_ORIGIN}/api/config/network-info`);
+            if (resNet.ok) {
+                const dataNet = await resNet.json();
+                lanUrlInput.value = dataNet.lanUrl;
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    function copyLanUrl() {
+        const url = lanUrlInput.value;
+        if (url && !url.includes("失败")) {
+            clipboard.writeText(url);
+            showToast("已复制点歌后台地址！可分发给同 Wi-Fi 朋友");
+        }
+    }
+
+    async function browseSongsDir() {
+        const selectedDir = await ipcRenderer.invoke('SELECT_SONGS_DIR');
+        if (selectedDir) {
+            try {
+                const res = await fetch(`${SERVER_ORIGIN}/api/config/songs-dir`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ songsDir: selectedDir })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    songsDirInput.value = data.songsDir;
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    }
+
+    function openSettingsModal() {
+        settingsModal.classList.add('show');
+        loadSettingsConfig();
+    }
+
+    function closeSettingsModal() {
+        settingsModal.classList.remove('show');
+    }
+
+    function openAdminWeb() {
+        shell.openExternal(`${SERVER_ORIGIN}/admin`);
+    }
+
+    ipcRenderer.on('TOGGLE_SETTINGS_MODAL', () => {
+        if (settingsModal.classList.contains('show')) {
+            closeSettingsModal();
+        } else {
+            openSettingsModal();
+        }
+    });
+
+    function decodeJapaneseBuffer(buffer) {
+        let str = iconv.decode(buffer, 'cp932');
+        if (str.includes('\uFFFD')) { 
+            let strShiftJis = iconv.decode(buffer, 'Shift_JIS');
+            if (!strShiftJis.includes('\uFFFD')) return strShiftJis;
+            return iconv.decode(buffer, 'utf-8');
+        }
+        return str;
+    }
+
+    ipcRenderer.on('OPEN_KAROKE_FILE', (event, filePath) => {
+        loadAndPlaySong(filePath);
+    });
+
+    socket.on('update-queue', (queue) => {
+        if (!isPlayingQueue && queue.length > 0) {
+            playNextInQueue();
+        }
+    });
+
+    async function executeCommand(cmd) {
+        if (cmd === 'TOGGLE_PLAY') {
+            togglePlay();
+        } else if (cmd === 'RESTART') {
+            restartSong();
+        } else if (cmd === 'NEXT_SONG') {
+            video.pause();
+            vocalAudio.pause();
+            await fetch(`${SERVER_ORIGIN}/api/queue/0`, { method: 'DELETE' });
+            isPlayingQueue = false;
+            playNextInQueue();
+        } else if (cmd === 'TOGGLE_VOCAL') {
+            toggleVocal();
+        } else if (cmd === 'PITCH_UP') {
+            currentPitch++;
+            socket.emit('change-pitch', currentPitch);
+            applyPitchShift(currentPitch);
+        } else if (cmd === 'PITCH_DOWN') {
+            currentPitch--;
+            socket.emit('change-pitch', currentPitch);
+            applyPitchShift(currentPitch);
+        } else if (cmd === 'PITCH_RESET') {
+            currentPitch = 0;
+            socket.emit('change-pitch', currentPitch);
+            applyPitchShift(currentPitch);
+        }
+    }
+
+    // 网页端指令同步
+    socket.on('broadcast-command', (cmd) => {
+        executeCommand(cmd);
+    });
+
+    // 桌面端顶部菜单栏/快捷键指令同步
+    ipcRenderer.on('MENU_COMMAND', (event, cmd) => {
+        executeCommand(cmd);
+    });
+
+    socket.on('broadcast-seek', (percent) => {
+        if (!isNaN(video.duration) && video.duration > 0) {
+            const targetTime = (percent / 100) * video.duration;
+            video.currentTime = targetTime;
+            vocalAudio.currentTime = targetTime;
+        }
+    });
+
+    socket.on('broadcast-volume', (vol) => {
+        setVolume(vol);
+    });
+
+    function toggleVocal() {
+        isVocalEnabled = !isVocalEnabled;
+        applyAudioMix();
+        updateHudDisplay();
+    }
+
+    function applyAudioMix() {
+        const masterVol = parseFloat(volumeSlider.value);
+        if (isVocalEnabled) {
+            video.volume = 0;
+            vocalAudio.volume = masterVol;
+        } else {
+            video.volume = masterVol;
+            vocalAudio.volume = 0;
+        }
+    }
+
+    async function playNextInQueue() {
+        try {
+            const res = await fetch(`${SERVER_ORIGIN}/api/queue`);
+            const queue = await res.json();
+            if (queue.length > 0) {
+                isPlayingQueue = true;
+                const song = queue[0];
+                currentPitch = song.pitch || 0;
+                loadAndPlaySong(song.txtFile);
+            } else {
+                isPlayingQueue = false;
+                hud.innerText = "等待点歌... [状态: 停止]";
+                songInfo.innerText = "";
+                video.style.display = 'none';
+                vocalAudio.pause();
+            }
+        } catch (e) {
+            console.error("处理播放队列失败:", e);
+            isPlayingQueue = false;
+        }
+    }
+
+    async function loadAndPlaySong(filePath) {
+        try {
+            await initToneEngine();
+
+            if (!fs.existsSync(filePath)) {
+                console.error("找不到文件:", filePath);
+                fetch(`${SERVER_ORIGIN}/api/queue/0`, { method: 'DELETE' });
+                isPlayingQueue = false;
+                playNextInQueue();
+                return;
+            }
+            const buffer = fs.readFileSync(filePath);
+            const content = decodeJapaneseBuffer(buffer);
+            const dir = path.dirname(filePath);
+
+            currentMetadata = {
+                title: parseTag(content, 'title') || path.basename(filePath, '.txt'),
+                lyrics: parseTag(content, 'lyrics') || 'N/A',
+                music: parseTag(content, 'music') || 'N/A',
+                singer: parseTag(content, 'singer') || 'N/A',
+                works: parseTag(content, 'works') || 'N/A',
+                source: parseTag(content, 'source')
+            };
+
+            const mediaExts = ['.mp3', '.wav', '.m4a', '.mp4', '.mkv'];
+            const files = fs.readdirSync(dir);
+
+            let mediaPath = null;
+            if (currentMetadata.source) {
+                let target = path.join(dir, currentMetadata.source.trim());
+                if (fs.existsSync(target)) mediaPath = target;
+            }
+            if (!mediaPath) {
+                const found = files.find(f => !f.toLowerCase().startsWith('v_') && mediaExts.includes(path.extname(f).toLowerCase()));
+                if (found) mediaPath = path.join(dir, found);
+            }
+
+            let vocalPath = null;
+            const foundVocal = files.find(f => f.toLowerCase().startsWith('v_') && mediaExts.includes(path.extname(f).toLowerCase()));
+            if (foundVocal) {
+                vocalPath = path.join(dir, foundVocal);
+            }
+
+            parsedPhrases = parseJoyHackLinearStream(content);
+            if (mediaPath) playMedia(mediaPath, vocalPath);
+        } catch (e) {
+            console.error("解析文件失败:", e);
+            fetch(`${SERVER_ORIGIN}/api/queue/0`, { method: 'DELETE' });
+            isPlayingQueue = false;
+            playNextInQueue();
+        }
+    }
+
+    function parseTag(text, tagName) {
+        const reg = new RegExp(`<${tagName}>([^<]+)`, 'i');
+        const match = text.match(reg);
+        return match ? match[1].trim() : null;
+    }
+
+    function timeCodeToSeconds(tcStr) {
+        const parts = tcStr.split(':');
+        return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10) + (parseInt(parts[2], 10) / 60.0);
+    }
+
+    function parseJoyHackLinearStream(text) {
+        const lines = text.split(/[\r\n]+/);
+        let activeLinesCount = 2;
+
+        let mainColors = {
+            fillBefore: '#FFFFFF', edgeBefore: '#000000', fillAfter: '#FF0033', edgeAfter: '#FFFFFF',
+            rubyFillBefore: '#FFFFFF', rubyEdgeBefore: '#000000', rubyFillAfter: '#FF0033', rubyEdgeAfter: '#FFFFFF'
+        };
+
+        let subColors = {
+            fillBefore: '#FFFFFF', edgeBefore: '#000000', fillAfter: '#FF0033', edgeAfter: '#FFFFFF',
+            rubyFillBefore: '#FFFFFF', rubyEdgeBefore: '#000000', rubyFillAfter: '#FF0033', rubyEdgeAfter: '#FFFFFF'
+        };
+
+        const phrases = [];
+
+        lines.forEach(line => {
+            if (!line.trim() && !line.includes('\t')) return;
+
+            if (line.match(/^<[a-zA-Z0-9_]+>/) && !line.includes('<time>') && !line.includes('<clear>') && !line.includes('<sub>') && !line.includes('<color>')) {
+                return;
+            }
+
+            let isClear = false;
+            if (line.includes('<clear>')) {
+                isClear = true;
+                const matchNum = line.match(/<clear>([1-4])/);
+                if (matchNum) activeLinesCount = parseInt(matchNum[1], 10);
+            }
+
+            let isSub = false;
+            if (line.includes('<sub>')) {
+                isSub = true;
+                line = line.replace(/<\/?sub>/g, '');
+            }
+
+            const timeTagIndex = line.indexOf('<time>');
+            if (timeTagIndex === -1) {
+                return;
+            }
+
+            const textPart = line.substring(0, timeTagIndex);
+            const timePart = line.substring(timeTagIndex);
+
+            const timeRegex = /\b\d{2}:\d{2}:\d{2}\b/g;
+            const timeMatches = timePart.match(timeRegex);
+            if (!timeMatches || timeMatches.length === 0) return;
+
+            const timeCodes = timeMatches.map(timeCodeToSeconds);
+            const showTime = timeCodes[0];
+            const endTime = timeCodes[timeCodes.length - 1];
+
+            const cleanTextPart = textPart.replace(/<clear>[1-4]?/g, '');
+            const rawWords = cleanTextPart.split('\t');
+
+            const wordList = [];
+            for (let i = 0; i < rawWords.length; i++) {
+                let wText = rawWords[i];
+                const wStart = timeCodes[i] !== undefined ? timeCodes[i] : showTime;
+                const wEnd = timeCodes[i + 1] !== undefined ? timeCodes[i + 1] : endTime;
+
+                if (wText.includes('<color>')) {
+                    const colorMatch = wText.match(/<color>([^<\t\r\n]+)/);
+                    if (colorMatch) {
+                        const cArgs = colorMatch[1].split(',');
+                        const targetColorObj = isSub ? subColors : mainColors;
+
+                        if (cArgs[0] && cArgs[0].trim()) targetColorObj.fillBefore = '#' + cArgs[0].trim();
+                        if (cArgs[1] && cArgs[1].trim()) targetColorObj.edgeBefore = '#' + cArgs[1].trim();
+                        if (cArgs[2] && cArgs[2].trim()) targetColorObj.fillAfter = '#' + cArgs[2].trim();
+                        if (cArgs[3] && cArgs[3].trim()) targetColorObj.edgeAfter = '#' + cArgs[3].trim();
+                        if (cArgs[4] && cArgs[4].trim()) targetColorObj.rubyFillBefore = '#' + cArgs[4].trim();
+                        if (cArgs[5] && cArgs[5].trim()) targetColorObj.rubyEdgeBefore = '#' + cArgs[5].trim();
+                        if (cArgs[6] && cArgs[6].trim()) targetColorObj.rubyFillAfter = '#' + cArgs[6].trim();
+                        if (cArgs[7] && cArgs[7].trim()) targetColorObj.rubyEdgeAfter = '#' + cArgs[7].trim();
+
+                        wText = wText.replace(/<color>[^<\t\r\n]+/, '');
+                    }
+                }
+
+                let baseText = wText;
+                let rubyText = null;
+                if (baseText.includes('<ruby>')) {
+                    const rParts = baseText.split('<ruby>');
+                    baseText = rParts[0];
+                    rubyText = rParts[1];
+                }
+
+                wordList.push({
+                    word: baseText,
+                    ruby: rubyText,
+                    isEmpty: (baseText === ''),
+                    start: wStart,
+                    end: wEnd,
+                    color: isSub ? { ...subColors } : { ...mainColors }
+                });
+            }
+
+            const isPureClearCmd = isClear && (cleanTextPart.replace(/[\s\u3000\t]/g, '') === '');
+
+            phrases.push({
+                isClearCmd: isPureClearCmd,
+                isSub: isSub,
+                linesCount: activeLinesCount,
+                showTime: showTime,
+                endTime: endTime,
+                words: wordList
+            });
+        });
+
+        phrases.sort((a, b) => a.showTime - b.showTime);
+
+        const pureMainPhrases = phrases.filter(p => !p.isSub && !p.isClearCmd);
+        
+        let currentLinesMode = -1;
+        let modeCounter = 0;
+
+        pureMainPhrases.forEach((p) => {
+            if (p.linesCount !== currentLinesMode) {
+                currentLinesMode = p.linesCount;
+                modeCounter = 0;
+            }
+            p.inModeIndex = modeCounter;
+            modeCounter++;
+        });
+        
+        phrases.forEach(p => {
+            if (p.isSub) {
+                let hostIndex = pureMainPhrases.findIndex(m => p.showTime >= m.showTime && p.showTime <= m.endTime + 1.0);
+                if (hostIndex === -1) {
+                    hostIndex = pureMainPhrases.findIndex(m => m.showTime >= p.showTime);
+                }
+                if (hostIndex === -1 && pureMainPhrases.length > 0) {
+                    hostIndex = pureMainPhrases.length - 1;
+                }
+
+                p.hostMain = hostIndex !== -1 ? pureMainPhrases[hostIndex] : null;
+                p.prevMain = (hostIndex > 0) ? pureMainPhrases[hostIndex - 1] : null;
+            }
+        });
+
+        return phrases;
+    }
+
+    function playMedia(mediaPath, vocalPath) {
+        video.style.display = 'block';
+        video.src = `file://${mediaPath.replace(/\\/g, '/')}`;
+
+        if (vocalPath) {
+            vocalAudio.src = `file://${vocalPath.replace(/\\/g, '/')}`;
+        } else {
+            vocalAudio.src = "";
+        }
+
+        isVocalEnabled = false;
+        applyAudioMix();
+        applyPitchShift(currentPitch);
+
+        songInfo.innerText = `作词: ${currentMetadata.lyrics} | 作曲: ${currentMetadata.music} | 出处: ${currentMetadata.works}`;
+
+        playBtn.disabled = false;
+        playBtn.innerText = "暂停";
+
+        activeMainRowsCount = -1;
+        activeHasSubSlot = false;
+
+        video.play().catch(err => console.log("等待手动触发播放:", err));
+        if (vocalPath) {
+            vocalAudio.play().catch(err => console.log("原唱轨同步受阻:", err));
+        }
+
+        requestAnimationFrame(animationLoop);
+    }
+
+    function setVolume(val) {
+        volumeSlider.value = val;
+        applyAudioMix();
+    }
+
+    video.onended = async () => {
+        hud.innerText = `${currentMetadata.title} [状态: 播放完毕]`;
+        karaokeDisplay.innerHTML = "";
+        vocalAudio.pause();
+        await fetch(`${SERVER_ORIGIN}/api/queue/0`, { method: 'DELETE' });
+        isPlayingQueue = false;
+        playNextInQueue();
+    };
+
+    video.onseeking = () => {
+        if (vocalAudio.src) vocalAudio.currentTime = video.currentTime;
+        renderFrameAtTime(video.currentTime);
+    };
+
+    video.onseeked = () => {
+        if (vocalAudio.src) vocalAudio.currentTime = video.currentTime;
+        renderFrameAtTime(video.currentTime);
+    };
+
+    video.ontimeupdate = () => {
+        if (!isNaN(video.duration) && video.duration > 0) {
+            const cur = video.currentTime;
+            
+            if (vocalAudio.src && Math.abs(vocalAudio.currentTime - cur) > 0.15) {
+                vocalAudio.currentTime = cur;
+            }
+
+            progressBar.style.width = `${(cur / video.duration) * 100}%`;
+            timeDisplay.innerText = `${formatTime(cur)} / ${formatTime(video.duration)}`;
+            socket.emit('sync-progress', { currentTime: cur, duration: video.duration });
+        }
+    };
+
+    function animationLoop() {
+        if (!video.paused && !video.ended) {
+            renderFrameAtTime(video.currentTime);
+        }
+        requestAnimationFrame(animationLoop);
+    }
+
+    function updateLayoutIfNeeded(mainRowsCount, hasSub) {
+        if (activeMainRowsCount === mainRowsCount && activeHasSubSlot === hasSub) {
+            return;
+        }
+
+        activeMainRowsCount = mainRowsCount;
+        activeHasSubSlot = hasSub;
+
+        karaokeDisplay.innerHTML = "";
+
+        for (let i = 0; i < mainRowsCount; i++) {
+            const row = document.createElement('div');
+            let alignClass = 'row-align-left';
+            
+            if (mainRowsCount === 1) {
+                alignClass = 'row-align-center';
+            } else if (mainRowsCount === 2) {
+                alignClass = i % 2 === 0 ? 'row-align-left' : 'row-align-right';
+            } else if (mainRowsCount === 3) {
+                if (i === 0) alignClass = 'row-align-left';
+                else if (i === 1) alignClass = 'row-align-center';
+                else alignClass = 'row-align-right';
+            } else if (mainRowsCount === 4) {
+                alignClass = i % 2 === 0 ? 'row-align-left' : 'row-align-right';
+            }
+
+            row.className = `lyric-row ${alignClass}`;
+            row.id = `lyricRow_${i}`;
+            karaokeDisplay.appendChild(row);
+        }
+
+        if (hasSub) {
+            const subRow = document.createElement('div');
+            subRow.className = `lyric-row row-sub`;
+            subRow.id = `lyricRow_sub`;
+            karaokeDisplay.appendChild(subRow);
+        }
+    }
+
+    function renderFrameAtTime(curTime) {
+        if (parsedPhrases.length === 0) return;
+
+        const activeClearCmd = parsedPhrases.find(p => p.isClearCmd && curTime >= p.showTime && curTime <= p.endTime);
+        if (activeClearCmd) {
+            karaokeDisplay.innerHTML = "";
+            activeMainRowsCount = -1;
+            activeHasSubSlot = false;
+            return;
+        }
+
+        const pureMains = parsedPhrases.filter(p => !p.isSub && !p.isClearCmd);
+        if (pureMains.length === 0) return;
+
+        const isOpeningPreload = (curTime < pureMains[0].showTime);
+
+        let curIdx = -1;
+        if (isOpeningPreload) {
+            curIdx = 0;
+        } else {
+            for (let i = 0; i < pureMains.length; i++) {
+                if (curTime >= pureMains[i].showTime) {
+                    curIdx = i;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if (curIdx === -1) return;
+
+        const currentMain = pureMains[curIdx];
+        const nextMain = pureMains[curIdx + 1];
+
+        const maxMainRows = currentMain.linesCount || 2;
+
+        const activeSub = parsedPhrases.find(p => {
+            if (!p.isSub) return false;
+
+            let isTriggered = false;
+            if (p.hostMain) {
+                const delta = p.showTime - p.hostMain.showTime;
+                if (delta <= 1.5) {
+                    if (p.prevMain) {
+                        isTriggered = curTime >= p.prevMain.showTime;
+                    } else {
+                        isTriggered = curTime >= (p.hostMain.showTime - 2.0);
+                    }
+                } else {
+                    isTriggered = curTime >= (p.showTime - 1.5);
+                }
+            } else {
+                isTriggered = curTime >= (p.showTime - 1.5);
+            }
+
+            if (!isTriggered) return false;
+
+            let extendedEndTime = p.endTime;
+            const overlappingMains = pureMains.filter(m => m.showTime <= p.endTime + 2.0 && m.endTime >= p.showTime);
+            if (overlappingMains.length > 0) {
+                const maxMainEndTime = Math.max(...overlappingMains.map(m => m.endTime));
+                extendedEndTime = Math.max(p.endTime, maxMainEndTime);
+            }
+
+            return curTime <= extendedEndTime;
+        });
+
+        updateLayoutIfNeeded(maxMainRows, !!activeSub);
+
+        const currentSlotIdx = currentMain.inModeIndex !== undefined ? currentMain.inModeIndex : curIdx;
+        const activeRowIdx = maxMainRows > 1 ? (currentSlotIdx % maxMainRows) : 0;
+        
+        let previewRowIdx = -1;
+        if (nextMain && nextMain.linesCount === maxMainRows && !nextMain.isClearCmd) {
+            const nextSlotIdx = nextMain.inModeIndex !== undefined ? nextMain.inModeIndex : (curIdx + 1);
+            previewRowIdx = maxMainRows > 1 ? (nextSlotIdx % maxMainRows) : -1;
+        }
+
+        const activeRowElem = document.getElementById(`lyricRow_${activeRowIdx}`);
+        const previewRowElem = previewRowIdx !== -1 ? document.getElementById(`lyricRow_${previewRowIdx}`) : null;
+
+        if (activeRowElem) {
+            activeRowElem.innerHTML = buildLineHtml(currentMain);
+            activeRowElem.style.opacity = isOpeningPreload ? "0.5" : "1";
+
+            currentMain.words.forEach((w, wIdx) => {
+                const wordElem = activeRowElem.querySelector(`[data-widx="${wIdx}"] .karaoke-word-active`);
+                if (wordElem) {
+                    let progress = 0;
+                    if (!isOpeningPreload) {
+                        if (curTime >= w.end) {
+                            progress = 100;
+                        } else if (curTime > w.start) {
+                            progress = ((curTime - w.start) / (w.end - w.start)) * 100;
+                        }
+                    }
+                    wordElem.style.setProperty('--clip', `${progress}%`);
+                }
+            });
+        }
+
+        if (previewRowElem) {
+            if (nextMain && !nextMain.isClearCmd) {
+                previewRowElem.innerHTML = buildLineHtml(nextMain);
+                previewRowElem.style.opacity = "0.5";
+
+                nextMain.words.forEach((w, wIdx) => {
+                    const wordElem = previewRowElem.querySelector(`[data-widx="${wIdx}"] .karaoke-word-active`);
+                    if (wordElem) {
+                        wordElem.style.setProperty('--clip', `0%`);
+                    }
+                });
+            } else {
+                previewRowElem.innerHTML = "";
+            }
+        }
+
+        if (activeSub) {
+            const subElem = document.getElementById(`lyricRow_sub`);
+            if (subElem) {
+                subElem.innerHTML = buildLineHtml(activeSub);
+                subElem.style.opacity = (curTime >= activeSub.showTime) ? "1" : "0.5";
+
+                activeSub.words.forEach((w, wIdx) => {
+                    const wordElem = subElem.querySelector(`[data-widx="${wIdx}"] .karaoke-word-active`);
+                    if (wordElem) {
+                        let progress = 0;
+                        if (curTime >= w.end) {
+                            progress = 100;
+                        } else if (curTime > w.start) {
+                            progress = ((curTime - w.start) / (w.end - w.start)) * 100;
+                        }
+                        wordElem.style.setProperty('--clip', `${progress}%`);
+                    }
+                });
+            }
+        }
+    }
+
+    function getSmoothShadow(color) {
+        return `-1.5px -1.5px 0 ${color}, 1.5px -1.5px 0 ${color}, -1.5px 1.5px 0 ${color}, 1.5px 1.5px 0 ${color}, -2px 0 0 ${color}, 2px 0 0 ${color}, 0 -2px 0 ${color}, 0 2px 0 ${color}, -1px -2px 0 ${color}, 1px -2px 0 ${color}, -1px 2px 0 ${color}, 1px 2px 0 ${color}`;
+    }
+
+    function buildLineHtml(lineData) {
+        return lineData.words.map((w, idx) => {
+            if (w.isEmpty) {
+                return '';
+            }
+
+            let displayText = w.word;
+            let rubyText = w.ruby;
+
+            const c = w.color || {
+                fillBefore: '#FFFFFF', edgeBefore: '#000000',
+                fillAfter: '#FF0033', edgeAfter: '#FFFFFF',
+                rubyFillBefore: '#FFFFFF', rubyEdgeBefore: '#000000',
+                rubyFillAfter: '#FF0033', rubyEdgeAfter: '#FFFFFF'
+            };
+
+            const baseShadow = getSmoothShadow(c.edgeBefore) + ', 0 4px 12px rgba(0,0,0,0.85)';
+            const activeShadow = getSmoothShadow(c.edgeAfter) + ', 0 0 16px ' + c.fillAfter + ', 0 4px 8px rgba(0,0,0,0.9)';
+            
+            const rubyBaseShadow = getSmoothShadow(c.rubyEdgeBefore) + ', 0 0 6px #000';
+            const rubyActiveShadow = getSmoothShadow(c.rubyEdgeAfter) + ', 0 0 8px ' + c.rubyFillAfter;
+
+            let baseInner = displayText;
+            let activeInner = displayText;
+
+            if (rubyText) {
+                baseInner = `<ruby>${displayText}<rt style="color:${c.rubyFillBefore}; text-shadow:${rubyBaseShadow};">${rubyText}</rt></ruby>`;
+                activeInner = `<ruby>${displayText}<rt style="color:${c.rubyFillAfter}; text-shadow:${rubyActiveShadow};">${rubyText}</rt></ruby>`;
+            }
+
+            return `<div class="karaoke-word-wrapper" data-widx="${idx}"><div class="karaoke-word-base" style="color:${c.fillBefore}; text-shadow:${baseShadow};">${baseInner}</div><div class="karaoke-word-active" style="color:${c.fillAfter}; text-shadow:${activeShadow};">${activeInner}</div></div>`;
+        }).join("");
+    }
+
+    function togglePlay() {
+        if (video.ended) return;
+        if (video.paused) {
+            video.play();
+            if (vocalAudio.src) vocalAudio.play();
+            playBtn.innerText = "暂停";
+            updateHudDisplay();
+        } else {
+            video.pause();
+            if (vocalAudio.src) vocalAudio.pause();
+            playBtn.innerText = "暂停";
+            hud.innerText = `${currentMetadata.title} [状态: 已暂停]`;
+        }
+    }
+
+    function restartSong() {
+        video.currentTime = 0;
+        if (vocalAudio.src) vocalAudio.currentTime = 0;
+        playBtn.disabled = false;
+        playBtn.innerText = "暂停";
+        video.play().catch(err => console.log("重新播放受阻:", err));
+        if (vocalAudio.src) {
+            vocalAudio.play().catch(err => console.log("原唱轨同步受阻:", err));
+        }
+        updateHudDisplay();
+    }
+
+    function seek(e) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const pos = (e.clientX - rect.left) / rect.width;
+        if (!isNaN(video.duration)) {
+            const t = pos * video.duration;
+            video.currentTime = t;
+            if (vocalAudio.src) vocalAudio.currentTime = t;
+            if (video.ended) { 
+                playBtn.disabled = false; 
+                playBtn.innerText = "暂停"; 
+                video.play(); 
+                if (vocalAudio.src) vocalAudio.play();
+            }
+        }
+    }
+
+    function formatTime(sec) {
+        const m = Math.floor(sec / 60).toString().padStart(2, '0');
+        const s = Math.floor(sec % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RecENT (JoyHack)</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            background-color: #f0f0f0; color: #000; 
+            font-family: "MS UI Gothic", "Meiryo", "Microsoft YaHei", sans-serif; 
+            display: flex; flex-direction: column; height: 100vh; overflow: hidden; font-size: 12px;
+        }
+
+        .top-panel { 
+            background: #ece9d8; border-bottom: 2px solid #d4d0c8; padding: 8px 10px; 
+            display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: center; flex-shrink: 0;
+        }
+        .meta-grid { display: grid; grid-template-columns: 65px 1fr; gap: 4px 8px; align-items: center; }
+        .meta-grid label { text-align: right; color: #222; }
+        .meta-input { width: 100%; background: #fff; border: 1px solid #7f9db9; padding: 2px 4px; font-size: 12px; height: 20px; }
+        .meta-input:focus { border-color: #316ac5; outline: none; }
+        .btn-sm { background: #ece9d8; border: 1px solid #7f9db9; padding: 1px 6px; font-size: 11px; cursor: pointer; }
+        .btn-sm:active { background: #d4d0c8; }
+
+        .timer-display-box { 
+            background: #000; border: inset 2px #7f9db9; padding: 4px 12px; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 130px;
+        }
+        .timer-digits { font-family: "Consolas", "Courier New", monospace; font-size: 24px; font-weight: bold; color: #00ffff; letter-spacing: 1px; }
+
+        .grid-container { flex: 1; background: #fff; border: inset 2px #7f9db9; margin: 6px 8px; overflow-y: auto; position: relative; }
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        th { background: #ece9d8; border-right: 1px solid #d4d0c8; border-bottom: 1px solid #d4d0c8; padding: 4px; font-weight: normal; text-align: left; position: sticky; top: 0; z-index: 10; }
+        td { border-right: 1px solid #e0e0e0; border-bottom: 1px solid #e0e0e0; padding: 3px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        tr.selected { background: #316ac5 !important; color: #fff; }
+        tr:nth-child(even):not(.selected) { background: #f9f9f9; }
+        
+        .col-time { width: 100px; font-family: monospace; text-align: center; }
+        .col-lyric { width: auto; }
+        .col-ruby { width: 120px; }
+
+        .bottom-bar { background: #ece9d8; border-top: 1px solid #d4d0c8; padding: 6px 10px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+        .ctrl-btn { background: #ece9d8; border: 1px solid #7f9db9; width: 26px; height: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 11px; }
+        .ctrl-btn:hover { background: #e0dfd5; }
+        .ctrl-btn:active { background: #d4d0c8; }
+        .slider-progress { flex: 1; accent-color: #316ac5; }
+
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.4); z-index: 1000; display: none;
+            justify-content: center; align-items: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-card {
+            background: #ece9d8; border: 2px outset #fff; padding: 15px; width: 350px;
+            box-shadow: 4px 4px 10px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 12px; font-size: 12px;
+        }
+        .modal-header { font-weight: bold; border-bottom: 1px solid #d4d0c8; padding-bottom: 5px; }
+        .modal-footer { display: flex; justify-content: flex-end; gap: 6px; margin-top: 5px; }
+        
+        #audioFileInput { display: none; }
+    </style>
+</head>
+<body>
+
+    <input type="file" id="audioFileInput" accept="audio/*,video/*" onchange="loadAudioFile(this)">
+
+    <div class="top-panel">
+        <div class="meta-grid">
+            <label id="lblTitle">曲名</label>
+            <input type="text" class="meta-input" id="metaTitle" oninput="updateHeaderTitle()">
+            <label id="lblKana">カナ読み</label>
+            <input type="text" class="meta-input" id="metaKana">
+            <label id="lblSinger">歌手名</label>
+            <input type="text" class="meta-input" id="metaSinger">
+            <label id="lblWorks">作品名</label>
+            <input type="text" class="meta-input" id="metaWorks">
+            <label id="lblLyrics">作詞</label>
+            <input type="text" class="meta-input" id="metaLyrics">
+            <label id="lblMusic">作曲</label>
+            <input type="text" class="meta-input" id="metaMusic">
+        </div>
+        <div class="meta-grid">
+            <label id="lblAuthor">作成者</label>
+            <input type="text" class="meta-input" id="metaAuthor">
+            <label id="lblYear">発表年</label>
+            <input type="text" class="meta-input" id="metaYear">
+            <label id="lblMedia">メディア</label>
+            <div style="display: flex; gap: 4px;">
+                <input type="text" class="meta-input" id="metaSource" readonly>
+                <button class="btn-sm" id="btnBrowse" onclick="document.getElementById('audioFileInput').click()">参照</button>
+            </div>
+            <label id="lblExtra">タイトル</label>
+            <div style="display: flex; gap: 4px;">
+                <input type="text" class="meta-input" id="metaExtraTitle">
+                <button class="btn-sm">参照</button>
+            </div>
+            <label id="lblFix">補正</label>
+            <input type="text" class="meta-input" id="metaFix" value="+00:00:00" style="font-family: monospace;">
+        </div>
+        <div class="timer-display-box">
+            <div class="timer-digits" id="timerDigits">00:00:00</div>
+        </div>
+    </div>
+
+    <div class="grid-container">
+        <table id="lyricTable">
+            <thead>
+                <tr>
+                    <th class="col-time" id="thTime">タイムコード</th>
+                    <th class="col-lyric" id="thLyric">歌詞</th>
+                    <th class="col-ruby" id="thRuby">ルビ</th>
+                </tr>
+            </thead>
+            <tbody id="gridBody">
+            </tbody>
+        </table>
+    </div>
+
+    <div class="bottom-bar">
+        <button class="ctrl-btn" onclick="audio.currentTime=0">⏮</button>
+        <button class="ctrl-btn" id="playPauseBtn" onclick="togglePlay()">▶</button>
+        <button class="ctrl-btn" onclick="audio.pause(); audio.currentTime=0;">⏹</button>
+        <button class="ctrl-btn" id="btnStamp" onclick="insertCurrentTimestamp()">⏱ 打点</button>
+        <input type="range" class="slider-progress" id="progressSlider" value="0" max="100" step="0.1" oninput="seekAudio(this.value)">
+        <audio id="mainAudio" ontimeupdate="onAudioTimeUpdate()"></audio>
+    </div>
+
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal-card">
+            <div class="modal-header" id="stModalTitle">プリファレンス / 設定</div>
+            <div>
+                <label id="stLangLabel" style="display: block; margin-bottom: 5px;">表示言語 (Display Language):</label>
+                <select id="langSelect" class="meta-input" style="height: 24px;">
+                    <option value="ja">日本語 (Japanese)</option>
+                    <option value="zh">中文 (Chinese)</option>
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-sm" onclick="saveSettings()" id="stBtnSave">保存</button>
+                <button class="btn-sm" onclick="closeSettings()" id="stBtnCancel">キャンセル</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const { ipcRenderer } = require('electron');
+    const audio = document.getElementById('mainAudio');
+    const gridBody = document.getElementById('gridBody');
+    const timerDigits = document.getElementById('timerDigits');
+    const progressSlider = document.getElementById('progressSlider');
+    
+    let tableData = [
+        { time: "00:00:00", lyric: "<clear>", ruby: "" }
+    ];
+    let selectedIndex = 0;
+    let currentLang = localStorage.getItem('editor_lang') || 'ja';
+
+    let rawHeaderMeta = {
+        version: "2.1.0",
+        render: "off",
+        searchKey: "",
+        titleimage: ""
+    };
+
+    const i18n = {
+        ja: {
+            lblTitle: "曲名", lblKana: "カナ読み", lblSinger: "歌手名", lblWorks: "作品名",
+            lblLyrics: "作詞", lblMusic: "作曲", lblAuthor: "作成者", lblYear: "発表年",
+            lblMedia: "メディア", lblExtra: "タイトル", lblFix: "補正", btnBrowse: "参照",
+            thTime: "タイムコード", thLyric: "歌詞", thRuby: "ルビ", btnStamp: "打点",
+            stModalTitle: "プリファレンス / 設定", stLangLabel: "表示言語 (Display Language):",
+            stBtnSave: "保存", stBtnCancel: "キャンセル"
+        },
+        zh: {
+            lblTitle: "曲名", lblKana: "假名读音", lblSinger: "歌手", lblWorks: "作品出处",
+            lblLyrics: "作词", lblMusic: "作曲", lblAuthor: "制作者", lblYear: "发行年",
+            lblMedia: "媒体文件", lblExtra: "附加标题", lblFix: "时间补正", btnBrowse: "浏览",
+            thTime: "时间码", thLyric: "歌词文本", thRuby: "注音(Ruby)", btnStamp: "打点",
+            stModalTitle: "首选项 / 设置", stLangLabel: "界面显示语言 (Display Language):",
+            stBtnSave: "保存", stBtnCancel: "取消"
+        }
+    };
+
+    function applyLanguage(lang) {
+        currentLang = lang;
+        localStorage.setItem('editor_lang', lang);
+        const t = i18n[lang];
+        document.getElementById('lblTitle').innerText = t.lblTitle;
+        document.getElementById('lblKana').innerText = t.lblKana;
+        document.getElementById('lblSinger').innerText = t.lblSinger;
+        document.getElementById('lblWorks').innerText = t.lblWorks;
+        document.getElementById('lblLyrics').innerText = t.lblLyrics;
+        document.getElementById('lblMusic').innerText = t.lblMusic;
+        document.getElementById('lblAuthor').innerText = t.lblAuthor;
+        document.getElementById('lblYear').innerText = t.lblYear;
+        document.getElementById('lblMedia').innerText = t.lblMedia;
+        document.getElementById('lblExtra').innerText = t.lblExtra;
+        document.getElementById('lblFix').innerText = t.lblFix;
+        document.getElementById('btnBrowse').innerText = t.btnBrowse;
+        document.getElementById('thTime').innerText = t.thTime;
+        document.getElementById('thLyric').innerText = t.thLyric;
+        document.getElementById('thRuby').innerText = t.thRuby;
+        document.getElementById('btnStamp').innerText = t.btnStamp;
+        document.getElementById('stModalTitle').innerText = t.stModalTitle;
+        document.getElementById('stLangLabel').innerText = t.stLangLabel;
+        document.getElementById('stBtnSave').innerText = t.stBtnSave;
+        document.getElementById('stBtnCancel').innerText = t.stBtnCancel;
+        document.getElementById('langSelect').value = lang;
+    }
+
+    function openSettings() {
+        document.getElementById('settingsModal').classList.add('show');
+    }
+
+    function closeSettings() {
+        document.getElementById('settingsModal').classList.remove('show');
+    }
+
+    function saveSettings() {
+        const lang = document.getElementById('langSelect').value;
+        applyLanguage(lang);
+        closeSettings();
+    }
+
+    function renderTable() {
+        gridBody.innerHTML = "";
+        tableData.forEach((row, index) => {
+            const tr = document.createElement('tr');
+            if (index === selectedIndex) tr.className = 'selected';
+            
+            tr.onclick = () => {
+                selectedIndex = index;
+                renderTable();
+                if (row.time && row.time !== "") {
+                    jumpAudioToTime(row.time);
+                }
+            };
+
+            tr.innerHTML = `
+                <td class="col-time" contenteditable="true" onblur="updateRowData(${index}, 'time', this.innerText)">${row.time}</td>
+                <td class="col-lyric" contenteditable="true" onblur="updateRowData(${index}, 'lyric', this.innerText)">${row.lyric}</td>
+                <td class="col-ruby" contenteditable="true" onblur="updateRowData(${index}, 'ruby', this.innerText)">${row.ruby}</td>
+            `;
+            gridBody.appendChild(tr);
+        });
+    }
+
+    function updateRowData(index, field, val) {
+        tableData[index][field] = val.trim();
+    }
+
+    function addNewRow() {
+        tableData.push({ time: formatTimeCode(audio.currentTime || 0), lyric: "", ruby: "" });
+        selectedIndex = tableData.length - 1;
+        renderTable();
+    }
+
+    function deleteSelectedRow() {
+        if (tableData.length > 1) {
+            tableData.splice(selectedIndex, 1);
+            selectedIndex = Math.max(0, selectedIndex - 1);
+            renderTable();
+        }
+    }
+
+    function loadAudioFile(input) {
+        if (input.files && input.files[0]) {
+            const file = input.files[0];
+            audio.src = URL.createObjectURL(file);
+            document.getElementById('metaSource').value = file.name;
+        }
+    }
+
+    function togglePlay() {
+        if (audio.paused) {
+            audio.play();
+            document.getElementById('playPauseBtn').innerText = "❚❚";
+        } else {
+            audio.pause();
+            document.getElementById('playPauseBtn').innerText = "▶";
+        }
+    }
+
+    function formatTimeCode(sec) {
+        const m = Math.floor(sec / 60).toString().padStart(2, '0');
+        const s = Math.floor(sec % 60).toString().padStart(2, '0');
+        const ms = Math.floor((sec % 1) * 60);
+        return `${m}:${s}:${ms.toString().padStart(2, '0')}`;
+    }
+
+    function timeCodeToSeconds(tcStr) {
+        const parts = tcStr.split(':');
+        if (parts.length < 3) return 0;
+        return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10) + parseInt(parts[2], 10) / 60.0;
+    }
+
+    function jumpAudioToTime(tcStr) {
+        const sec = timeCodeToSeconds(tcStr);
+        if (!isNaN(sec)) audio.currentTime = sec;
+    }
+
+    function insertCurrentTimestamp() {
+        if (isNaN(audio.duration)) return;
+        const tc = formatTimeCode(audio.currentTime);
+        if (tableData[selectedIndex]) {
+            tableData[selectedIndex].time = tc;
+            renderTable();
+        }
+    }
+
+    function onAudioTimeUpdate() {
+        if (isNaN(audio.duration)) return;
+        const cur = audio.currentTime;
+        timerDigits.innerText = formatTimeCode(cur);
+        progressSlider.value = (cur / audio.duration) * 100;
+    }
+
+    function seekAudio(val) {
+        if (!isNaN(audio.duration)) {
+            audio.currentTime = (val / 100) * audio.duration;
+        }
+    }
+
+    function updateHeaderTitle() {
+        const t = document.getElementById('metaTitle').value;
+        document.title = `${t || 'Untitled'}.txt - RecENT (JoyHack)`;
+    }
+
+    // 核心流式扫描重构引擎
+    function parseJoyHackText(text) {
+        const extractTag = (tagName) => {
+            const reg = new RegExp(`<${tagName}>([^<]+)`, 'i');
+            const match = text.match(reg);
+            return match ? match[1].trim() : '';
+        };
+
+        document.getElementById('metaTitle').value = extractTag('title');
+        document.getElementById('metaKana').value = extractTag('searchKey');
+        document.getElementById('metaSinger').value = extractTag('singer');
+        document.getElementById('metaWorks').value = extractTag('works');
+        document.getElementById('metaMusic').value = extractTag('music');
+        document.getElementById('metaLyrics').value = extractTag('lyrics');
+        document.getElementById('metaSource').value = extractTag('source');
+        document.getElementById('metaAuthor').value = extractTag('author');
+        document.getElementById('metaYear').value = extractTag('year');
+        document.getElementById('metaFix').value = extractTag('timeCodeFix') || '+00:00:00';
+        
+        rawHeaderMeta.version = extractTag('version') || '2.1.0';
+        rawHeaderMeta.render = extractTag('render') || 'off';
+        rawHeaderMeta.searchKey = extractTag('searchKey');
+        rawHeaderMeta.titleimage = extractTag('titleimage');
+
+        tableData = [];
+
+        let lyricStream = text;
+        const tagsToRemove = ['version', 'title', 'lyrics', 'music', 'singer', 'works', 'render', 'year', 'author', 'timeCodeFix', 'searchKey', 'titleimage', 'source'];
+        tagsToRemove.forEach(tag => {
+            const regex = new RegExp(`<${tag}>[^<]*`, 'gi');
+            lyricStream = lyricStream.replace(regex, '');
+        });
+
+        // 统一过滤换行符（替换为 Tab 作为安全分隔），并按 <time> 拆分为独立块
+        lyricStream = lyricStream.replace(/[\r\n]+/g, '\t');
+        const chunks = lyricStream.split(/<time>/i);
+        
+        let pendingWords = [];
+
+        // 处理 Chunk[0] (即第一个 <time> 前的内容，通常为 <clear> 或引子)
+        const firstTokens = chunks[0].split('\t').filter(t => t !== undefined && t !== '');
+        firstTokens.forEach(t => pendingWords.push(t));
+
+        // 流式解析后续 Chunk：每个块包含前序的“时间戳组”与后序的“词条组”
+        for (let i = 1; i < chunks.length; i++) {
+            let chunk = chunks[i];
+            let tokens = chunk.split('\t');
+            
+            let currentTimes = [];
+            let nextWords = [];
+            let parsingTimes = true;
+
+            tokens.forEach(token => {
+                if (!token) return; // 忽略多余的 Tab 空块
+                
+                if (parsingTimes) {
+                    // 正则提取：8 位时间码 + 后续字词（若存在，如 00:09:03たん）
+                    const timeMatch = token.match(/^(\d{2}:\d{2}:\d{2})(.*)$/);
+                    if (timeMatch) {
+                        currentTimes.push(timeMatch[1]);
+                        if (timeMatch[2]) {
+                            // 探测到了后续字词，意味着时间戳组终结，进入词条扫描
+                            nextWords.push(timeMatch[2]);
+                            parsingTimes = false;
+                        }
+                    } else {
+                        // 若不是规范时间码，立即切换至词条组
+                        nextWords.push(token);
+                        parsingTimes = false;
+                    }
+                } else {
+                    nextWords.push(token);
+                }
+            });
+
+            // 【核心渲染逻辑】将上一批的 Words 词条与当前的 Times 时间戳一一配对打入表格
+            for (let j = 0; j < pendingWords.length; j++) {
+                let w = pendingWords[j];
+                let t = j < currentTimes.length ? currentTimes[j] : "";
+                if (w === ' ' || w === ' ') w = ""; // 处理全角空格空白行
+                tableData.push({ time: t, lyric: w, ruby: "" });
+            }
+            
+            // 超出词条数量的多余时间戳，全部判定为行终结符 "/"
+            for (let j = pendingWords.length; j < currentTimes.length; j++) {
+                tableData.push({ time: currentTimes[j], lyric: "/", ruby: "" });
+            }
+
+            // 当前块的后序词条，抛给下一次循环处理时间戳
+            pendingWords = nextWords;
+        }
+
+        // 清理末尾遗留数据
+        pendingWords.forEach(w => {
+            if (w === ' ' || w === ' ') w = "";
+            tableData.push({ time: "", lyric: w, ruby: "" });
+        });
+
+        if (tableData.length === 0) {
+            tableData.push({ time: "00:00:00", lyric: "<clear>", ruby: "" });
+        }
+        
+        selectedIndex = 0;
+        renderTable();
+        updateHeaderTitle();
+    }
+
+    // 完美复原 JoyHack 线性时间轴流格式导出引擎
+    function saveProjectFile() {
+        let output = `<version>${rawHeaderMeta.version}`;
+        output += `<title>${document.getElementById('metaTitle').value}`;
+        output += `<lyrics>${document.getElementById('metaLyrics').value}`;
+        output += `<music>${document.getElementById('metaMusic').value}`;
+        output += `<singer>${document.getElementById('metaSinger').value}`;
+        output += `<works>${document.getElementById('metaWorks').value}`;
+        output += `<render>${rawHeaderMeta.render}`;
+        output += `<year>${document.getElementById('metaYear').value}`;
+        output += `<author>${document.getElementById('metaAuthor').value}`;
+        output += `<timeCodeFix>${document.getElementById('metaFix').value}`;
+        output += `<searchKey>${document.getElementById('metaKana').value}`;
+        output += `<titleimage>${rawHeaderMeta.titleimage}`;
+        output += `<source>${document.getElementById('metaSource').value}\n`;
+
+        let currentWords = [];
+        let currentTimes = [];
+
+        tableData.forEach(row => {
+            // 扫描到终结符 / ，立刻执行行封装与换行输出
+            if (row.lyric === '/') {
+                if (row.time) currentTimes.push(row.time);
+                
+                let lineStr = currentWords.join('\t');
+                if (currentTimes.length > 0) {
+                    if (lineStr) lineStr += '\t';
+                    lineStr += '<time>' + currentTimes.join('\t');
+                }
+                output += lineStr + '\n';
+                
+                currentWords = [];
+                currentTimes = [];
+            } else {
+                let w = row.lyric;
+                // 将空歌词栏转化为空格实体存入
+                if (w === "") w = " ";
+                currentWords.push(w);
+                if (row.time) currentTimes.push(row.time);
+            }
+        });
+
+        // 打包遗留尾部行
+        if (currentWords.length > 0 || currentTimes.length > 0) {
+            let lineStr = currentWords.join('\t');
+            if (currentTimes.length > 0) {
+                if (lineStr) lineStr += '\t';
+                lineStr += '<time>' + currentTimes.join('\t');
+            }
+            output += lineStr + '\n';
+        }
+
+        const blob = new Blob([output], { type: 'text/plain;charset=shift_jis' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = (document.getElementById('metaTitle').value || 'song') + '.txt';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    ipcRenderer.on('EDITOR_CMD', (event, cmd) => {
+        if (cmd === 'NEW') {
+            tableData = [{ time: "00:00:00", lyric: "<clear>", ruby: "" }];
+            document.getElementById('metaTitle').value = "";
+            document.getElementById('metaKana').value = "";
+            document.getElementById('metaSinger').value = "";
+            document.getElementById('metaWorks').value = "";
+            document.getElementById('metaMusic').value = "";
+            document.getElementById('metaLyrics').value = "";
+            document.getElementById('metaSource').value = "";
+            document.getElementById('metaAuthor').value = "";
+            document.getElementById('metaYear').value = "";
+            renderTable();
+        } else if (cmd === 'SAVE') {
+            saveProjectFile();
+        } else if (cmd === 'OPEN_SETTINGS') {
+            openSettings();
+        } else if (cmd === 'TAG_CLEAR') {
+            tableData.push({ time: formatTimeCode(audio.currentTime || 0), lyric: "<clear>", ruby: "" });
+            renderTable();
+        } else if (cmd === 'TAG_COLOR') {
+            tableData.push({ time: formatTimeCode(audio.currentTime || 0), lyric: "<color>FFFFFF,FF8080,FF8080,FFFFFF,FFFFFF,000000,000000,FFFFFF", ruby: "" });
+            renderTable();
+        }
+    });
+
+    ipcRenderer.on('LOAD_SONG_CONTENT', (event, data) => {
+        if (data && data.content) {
+            parseJoyHackText(data.content);
+        }
+    });
+
+    applyLanguage(currentLang);
+    renderTable();
+</script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JoyHack 点歌台</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #111; color: #fff; padding: 15px; }
+        input, button { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 6px; border: none; font-size: 16px; }
+        input { background: #222; color: #fff; border: 1px solid #444; box-sizing: border-box; }
+        button { background: #ff007f; color: white; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h2>参加者身份</h2>
+    <input type="text" id="username" placeholder="请输入您的名字" value="歌唱者">
+
+    <h2>点歌示例</h2>
+    <button onclick="addDemoSong('海阔天空')">点播《海阔天空》</button>
+    <button onclick="addDemoSong('残酷天使的行动纲领')">点播《残酷天使的行动纲领》</button>
+
+    <h2>控制按键</h2>
+    <button onclick="socket.emit('SKIP_SONG')" style="background:#555;">切歌</button>
+
+<script>
+    const socket = io();
+    function addDemoSong(title) {
+        const userName = document.getElementById('username').value || '匿名';
+        socket.emit('ADD_TO_QUEUE', {
+            userName,
+            song: { title, mediaUrl: 'https://www.w3schools.com/html/mov_bbb.mp4' }
+        });
+        alert(`已为您 (${userName}) 加入点歌队列！`);
+    }
+</script>
+</body>
+</html>

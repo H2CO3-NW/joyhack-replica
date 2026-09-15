@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>JoyHack Web 点歌后台控制台</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        html, body { 
+            height: 100%;
+            height: 100dvh;
+            width: 100%;
+            background-color: #121212; 
+            color: #fff; 
+            font-family: "Microsoft YaHei", -apple-system, BlinkMacSystemFont, sans-serif; 
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+
+        .header { 
+            background: #1a1a1a; 
+            padding: 12px 20px; 
+            padding-top: max(12px, env(safe-area-inset-top));
+            border-bottom: 1px solid #2a2a2a; 
+            display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+        }
+        .title { font-size: 18px; font-weight: bold; color: #00ffff; }
+        .queue-badge { font-size: 13px; background: #ff007f; color: #fff; padding: 2px 8px; border-radius: 10px; font-weight: bold; }
+
+        .content-container { flex: 1; position: relative; overflow: hidden; width: 100%; }
+        .tab-content { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            display: none; padding: 15px; overflow-y: auto; flex-direction: column; 
+            -webkit-overflow-scrolling: touch;
+        }
+        .tab-content.active { display: flex; }
+
+        .search-box { 
+            width: 100%; padding: 12px 15px; font-size: 16px; 
+            background: #222; border: 1px solid #444; color: #fff; border-radius: 8px; 
+            margin-bottom: 15px; outline: none; transition: border-color 0.2s;
+            flex-shrink: 0;
+        }
+        .search-box:focus { border-color: #00ffff; }
+        .song-list { display: flex; flex-direction: column; gap: 10px; padding-bottom: 20px; }
+        .song-card { 
+            background: #222; border-left: 4px solid #00ffff; padding: 12px 15px; 
+            border-radius: 6px; display: flex; justify-content: space-between; align-items: center; gap: 10px;
+        }
+        .song-info-box { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+        .song-title { font-size: 16px; font-weight: bold; color: #fff; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .song-meta { font-size: 13px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        
+        .song-btn-group { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+        .btn-order { background: #00ffff; color: #000; border: none; padding: 8px 14px; font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .btn-pitch-order { background: #ffcc00; color: #000; border: none; padding: 8px 12px; font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .btn-order:active, .btn-pitch-order:active { transform: scale(0.96); }
+
+        .queue-list { display: flex; flex-direction: column; gap: 10px; padding-bottom: 20px; }
+        .queue-item { 
+            background: #222; padding: 12px; border-radius: 6px; 
+            display: flex; justify-content: space-between; align-items: center; 
+            border-left: 4px solid #ff007f; gap: 10px; 
+        }
+        .queue-item.playing { border-left-color: #00ffff; background: #1a2a2a; }
+        .queue-item-info { display: flex; flex-direction: column; gap: 4px; overflow: hidden; flex: 1; }
+        .queue-item-title { font-size: 15px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .queue-item-meta { font-size: 12px; color: #aaa; }
+        .pitch-tag { font-size: 11px; background: #ff007f; color: #fff; padding: 1px 6px; border-radius: 4px; font-weight: bold; margin-left: 6px; }
+        
+        .queue-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+        .btn-q { border: none; padding: 6px 10px; font-size: 12px; font-weight: bold; border-radius: 4px; cursor: pointer; color: #fff; }
+        .btn-q-up { background: #333; }
+        .btn-q-top { background: #0088cc; }
+        .btn-q-play { background: #ff007f; }
+        .btn-q-del { background: #d9534f; }
+        .btn-q:active { opacity: 0.8; }
+
+        .control-panel { display: flex; flex-direction: column; gap: 15px; padding: 5px 0 20px 0; }
+        .quick-btns { display: flex; flex-direction: column; gap: 10px; }
+        .btn-ctrl { border: none; padding: 14px; font-size: 16px; font-weight: bold; cursor: pointer; border-radius: 8px; width: 100%; }
+        .btn-cyan { background-color: #00ffff; color: #000; }
+        .btn-pink { background-color: #ff007f; color: #fff; }
+        .btn-yellow { background-color: #ffcc00; color: #000; }
+        .btn-green { background-color: #00cc66; color: #000; }
+
+        /* 升降调控制面板 */
+        .pitch-box { background: #222; padding: 15px 18px; border-radius: 8px; border: 1px solid #333; display: flex; flex-direction: column; gap: 10px; }
+        .pitch-header { display: flex; justify-content: space-between; font-size: 14px; color: #00ffff; font-weight: bold; }
+        .pitch-btn-group { display: flex; gap: 8px; align-items: center; }
+        .btn-pitch { flex: 1; border: none; padding: 10px 0; font-weight: bold; font-size: 14px; border-radius: 6px; cursor: pointer; background: #333; color: #fff; text-align: center; }
+        .btn-pitch-reset { background: #ffcc00; color: #000; }
+        .btn-pitch:active { opacity: 0.8; }
+
+        .progress-box { background: #222; padding: 15px 18px; border-radius: 8px; border: 1px solid #333; display: flex; flex-direction: column; gap: 10px; }
+        .progress-header { display: flex; justify-content: space-between; font-size: 14px; font-family: monospace; color: #00ffff; font-weight: bold; }
+        .progress-bar-bg { width: 100%; height: 10px; background: #333; border-radius: 5px; cursor: pointer; position: relative; overflow: hidden; }
+        .progress-bar-fill { height: 100%; width: 0%; background: #00ffff; transition: width 0.1s linear; }
+
+        .volume-box { background: #222; padding: 15px 18px; border-radius: 8px; border: 1px solid #333; display: flex; align-items: center; justify-content: space-between; }
+        .volume-label { font-size: 15px; font-weight: bold; color: #00ffff; }
+        .volume-slider { width: 60%; accent-color: #00ffff; cursor: pointer; height: 6px; }
+
+        /* 底部 TAB 栏适配 iOS Safe Area */
+        .tab-bar { 
+            background: #1a1a1a; 
+            border-top: 1px solid #2a2a2a; 
+            display: flex; justify-content: space-around; align-items: center; 
+            flex-shrink: 0; z-index: 100; width: 100%;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        .tab-item { 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            gap: 4px; color: #888; font-size: 12px; font-weight: bold; cursor: pointer; flex: 1; 
+            padding: 8px 0;
+        }
+        .tab-item.active { color: #00ffff; }
+        .tab-icon { font-size: 18px; }
+
+        /* 点歌调高预设 Modal */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.75); z-index: 1000; display: none;
+            justify-content: center; align-items: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-card {
+            background: #222; border: 1px solid #444; border-radius: 10px;
+            width: 320px; padding: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.8);
+            display: flex; flex-direction: column; gap: 15px; text-align: center;
+        }
+        .modal-song-name { font-size: 16px; font-weight: bold; color: #00ffff; }
+        .pitch-select-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .pitch-opt-btn { background: #333; color: #fff; border: 1px solid #555; padding: 10px 0; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; }
+        .pitch-opt-btn.selected { background: #00ffff; color: #000; border-color: #00ffff; }
+
+        #toastContainer { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+        .toast { background: rgba(0, 255, 255, 0.95); color: #000; padding: 10px 18px; font-weight: bold; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-size: 14px; opacity: 0; transform: translateY(-20px); transition: all 0.3s ease; }
+        .toast.show { opacity: 1; transform: translateY(0); }
+    </style>
+</head>
+<body>
+    <div id="toastContainer"></div>
+
+    <div class="header">
+        <div class="title">JoyHack Web 点歌后台</div>
+        <div class="queue-badge" id="queueBadge">队列: 0 首</div>
+    </div>
+
+    <div class="content-container">
+        <!-- TAB 1: 歌曲选曲界面 -->
+        <div class="tab-content active" id="tabSongs">
+            <input type="text" class="search-box" id="searchInput" placeholder="🔍 搜索歌名、歌手、出处..." oninput="filterSongs()">
+            <div class="song-list" id="songList"></div>
+        </div>
+
+        <!-- TAB 2: 已点歌曲队列界面 -->
+        <div class="tab-content" id="tabQueue">
+            <div class="queue-list" id="queueList"></div>
+        </div>
+
+        <!-- TAB 3: 播放与升降调控制界面 -->
+        <div class="tab-content" id="tabControls">
+            <div class="control-panel">
+                <div class="quick-btns">
+                    <button class="btn-ctrl btn-cyan" onclick="sendCommand('TOGGLE_PLAY')">⏯ 播放 / 暂停</button>
+                    <button class="btn-ctrl btn-green" onclick="sendCommand('RESTART')">🔄 重新播放当前乐曲</button>
+                    <button class="btn-ctrl btn-pink" onclick="sendCommand('NEXT_SONG')">⏭ 切歌 (下一首)</button>
+                    <button class="btn-ctrl btn-yellow" onclick="sendCommand('TOGGLE_VOCAL')">🎤 伴唱 / 原唱 切换</button>
+                </div>
+
+                <!-- 实时升降调控制板 -->
+                <div class="pitch-box">
+                    <div class="pitch-header">
+                        <span>乐曲升降调控制</span>
+                        <span id="currentPitchDisplay">Key: 原调 (0)</span>
+                    </div>
+                    <div class="pitch-btn-group">
+                        <button class="btn-pitch" onclick="adjustPitch(-1)">♭ -1</button>
+                        <button class="btn-pitch" onclick="adjustPitch(-2)">♭ -2</button>
+                        <button class="btn-pitch btn-pitch-reset" onclick="setPitch(0)">原调 0</button>
+                        <button class="btn-pitch" onclick="adjustPitch(+1)">♯ +1</button>
+                        <button class="btn-pitch" onclick="adjustPitch(+2)">♯ +2</button>
+                    </div>
+                </div>
+
+                <div class="progress-box">
+                    <div class="progress-header">
+                        <span>播放进度控制</span>
+                        <span id="timeDisplay">00:00 / 00:00</span>
+                    </div>
+                    <div class="progress-bar-bg" onclick="seekProgress(event)">
+                        <div class="progress-bar-fill" id="progressBarFill"></div>
+                    </div>
+                </div>
+
+                <div class="volume-box">
+                    <span class="volume-label">🔊 系统音量</span>
+                    <input type="range" min="0" max="1" step="0.01" value="1" class="volume-slider" id="volumeSlider" oninput="changeVolume(this.value)">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 点歌调高预设 Modal -->
+    <div class="modal-overlay" id="pitchModal">
+        <div class="modal-card">
+            <div class="modal-song-name" id="modalSongTitle">歌名</div>
+            <div style="font-size: 13px; color: #aaa;">请选择初始播放调高 (Key)：</div>
+            <div class="pitch-select-grid">
+                <button class="pitch-opt-btn" onclick="confirmOrderWithPitch(-3)">-3</button>
+                <button class="pitch-opt-btn" onclick="confirmOrderWithPitch(-2)">-2</button>
+                <button class="pitch-opt-btn" onclick="confirmOrderWithPitch(-1)">-1</button>
+                <button class="pitch-opt-btn selected" onclick="confirmOrderWithPitch(0)">原调 (0)</button>
+                <button class="pitch-opt-btn" onclick="confirmOrderWithPitch(1)">+1</button>
+                <button class="pitch-opt-btn" onclick="confirmOrderWithPitch(2)">+2</button>
+                <button class="pitch-opt-btn" onclick="confirmOrderWithPitch(3)">+3</button>
+            </div>
+            <button style="background:none; border:none; color:#888; font-size:13px; cursor:pointer; margin-top:5px;" onclick="closePitchModal()">取消</button>
+        </div>
+    </div>
+
+    <div class="tab-bar">
+        <div class="tab-item active" onclick="switchTab('tabSongs', this)">
+            <span class="tab-icon">🎵</span>
+            <span>曲库点歌</span>
+        </div>
+        <div class="tab-item" onclick="switchTab('tabQueue', this)">
+            <span class="tab-icon">📋</span>
+            <span>已点队列</span>
+        </div>
+        <div class="tab-item" onclick="switchTab('tabControls', this)">
+            <span class="tab-icon">🎛</span>
+            <span>播放控制</span>
+        </div>
+    </div>
+
+<script>
+    const socket = io();
+    let allSongs = [];
+    let currentPitch = 0;
+    let selectedSongObj = null;
+
+    function showToast(message, isError = false) {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = `toast ${isError ? 'error' : ''}`;
+        toast.innerText = message;
+        container.appendChild(toast);
+
+        setTimeout(() => toast.classList.add('show'), 10);
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, 2200);
+    }
+
+    function switchTab(tabId, element) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab-item').forEach(el => el.classList.remove('active'));
+        
+        document.getElementById(tabId).classList.add('active');
+        element.classList.add('active');
+    }
+
+    function sendCommand(cmd) {
+        socket.emit('send-command', cmd);
+    }
+
+    function adjustPitch(delta) {
+        setPitch(currentPitch + delta);
+    }
+
+    function setPitch(val) {
+        currentPitch = Math.round(val);
+        socket.emit('change-pitch', currentPitch);
+        updatePitchDisplay(currentPitch);
+    }
+
+    function updatePitchDisplay(val) {
+        const str = val > 0 ? `+${val}` : `${val}`;
+        document.getElementById('currentPitchDisplay').innerText = `Key: ${val === 0 ? '原调 (0)' : str}`;
+    }
+
+    socket.on('broadcast-pitch', (pitchVal) => {
+        currentPitch = pitchVal;
+        updatePitchDisplay(pitchVal);
+    });
+
+    function seekProgress(e) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const percent = ((e.clientX - rect.left) / rect.width) * 100;
+        socket.emit('seek-progress', percent);
+    }
+
+    function changeVolume(vol) {
+        socket.emit('change-volume', parseFloat(vol));
+    }
+
+    socket.on('broadcast-progress', (data) => {
+        if (data && data.duration > 0) {
+            const cur = data.currentTime;
+            const percent = (cur / data.duration) * 100;
+            document.getElementById('progressBarFill').style.width = `${percent}%`;
+            document.getElementById('timeDisplay').innerText = `${formatTime(cur)} / ${formatTime(data.duration)}`;
+        }
+    });
+
+    function formatTime(sec) {
+        const m = Math.floor(sec / 60).toString().padStart(2, '0');
+        const s = Math.floor(sec % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
+    }
+
+    async function loadSongs() {
+        try {
+            const res = await fetch('/api/songs');
+            allSongs = await res.json();
+            renderSongs(allSongs);
+        } catch (e) {
+            console.error("加载曲库失败:", e);
+        }
+    }
+
+    socket.on('update-queue', (queue) => {
+        renderQueue(queue);
+        if (queue.length > 0 && queue[0].pitch !== undefined) {
+            currentPitch = queue[0].pitch;
+            updatePitchDisplay(currentPitch);
+        }
+    });
+
+    function renderQueue(queue) {
+        const queueElem = document.getElementById('queueList');
+        const badgeElem = document.getElementById('queueBadge');
+        queueElem.innerHTML = '';
+        badgeElem.innerText = `队列: ${queue.length} 首`;
+
+        if (queue.length === 0) {
+            queueElem.innerHTML = '<div style="color: #666; text-align: center; padding: 40px 20px;">当前队列为空，快去点歌吧！</div>';
+            return;
+        }
+
+        queue.forEach((song, index) => {
+            const item = document.createElement('div');
+            item.className = `queue-item ${index === 0 ? 'playing' : ''}`;
+
+            const pitchStr = song.pitch ? (song.pitch > 0 ? `+${song.pitch}` : `${song.pitch}`) : '';
+            const pitchBadge = pitchStr ? `<span class="pitch-tag">Key: ${pitchStr}</span>` : '';
+
+            const info = document.createElement('div');
+            info.className = 'queue-item-info';
+            info.innerHTML = `
+                <div class="queue-item-title">${index === 0 ? '▶ [播放中] ' : `${index}. `}${escapeHtml(song.title)}${pitchBadge}</div>
+                <div class="queue-item-meta">${escapeHtml(song.singer)}</div>
+            `;
+
+            const actions = document.createElement('div');
+            actions.className = 'queue-actions';
+
+            if (index === 0) {
+                const btnCut = document.createElement('button');
+                btnCut.className = 'btn-q btn-q-play';
+                btnCut.innerText = '切歌';
+                btnCut.addEventListener('click', () => sendCommand('NEXT_SONG'));
+                actions.appendChild(btnCut);
+            } else {
+                if (index > 1) {
+                    const btnUp = document.createElement('button');
+                    btnUp.className = 'btn-q btn-q-up';
+                    btnUp.innerText = '▲';
+                    btnUp.title = '上移';
+                    btnUp.addEventListener('click', () => reorderQueue(index, index - 1));
+                    actions.appendChild(btnUp);
+                }
+
+                if (index < queue.length - 1) {
+                    const btnDown = document.createElement('button');
+                    btnDown.className = 'btn-q btn-q-up';
+                    btnDown.innerText = '▼';
+                    btnDown.title = '下移';
+                    btnDown.addEventListener('click', () => reorderQueue(index, index + 1));
+                    actions.appendChild(btnDown);
+                }
+
+                if (index > 1) {
+                    const btnTop = document.createElement('button');
+                    btnTop.className = 'btn-q btn-q-top';
+                    btnTop.innerText = '🔝';
+                    btnTop.title = '置顶 (下一首)';
+                    btnTop.addEventListener('click', () => reorderQueue(index, 1));
+                    actions.appendChild(btnTop);
+                }
+
+                const btnPlayNow = document.createElement('button');
+                btnPlayNow.className = 'btn-q btn-q-play';
+                btnPlayNow.innerText = '⚡插播';
+                btnPlayNow.title = '中断当前播放，立刻播放此曲';
+                btnPlayNow.addEventListener('click', () => playNow(index));
+                actions.appendChild(btnPlayNow);
+
+                const btnDel = document.createElement('button');
+                btnDel.className = 'btn-q btn-q-del';
+                btnDel.innerText = '✕';
+                btnDel.title = '删除';
+                btnDel.addEventListener('click', () => deleteFromQueue(index));
+                actions.appendChild(btnDel);
+            }
+
+            item.appendChild(info);
+            item.appendChild(actions);
+            queueElem.appendChild(item);
+        });
+    }
+
+    async function reorderQueue(fromIndex, toIndex) {
+        try {
+            await fetch('/api/queue/reorder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fromIndex, toIndex })
+            });
+        } catch (e) {
+            showToast("网络错误", true);
+        }
+    }
+
+    async function playNow(index) {
+        try {
+            await fetch('/api/queue/play-now', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ index })
+            });
+            showToast("已启动插播");
+        } catch (e) {
+            showToast("插播失败", true);
+        }
+    }
+
+    async function deleteFromQueue(index) {
+        try {
+            await fetch(`/api/queue/${index}`, { method: 'DELETE' });
+        } catch (e) {
+            showToast("删除失败", true);
+        }
+    }
+
+    function renderSongs(songs) {
+        const listElem = document.getElementById('songList');
+        listElem.innerHTML = '';
+
+        songs.forEach((song) => {
+            const card = document.createElement('div');
+            card.className = 'song-card';
+
+            const info = document.createElement('div');
+            info.className = 'song-info-box';
+            info.innerHTML = `
+                <div class="song-title">${escapeHtml(song.title)}</div>
+                <div class="song-meta">歌手: ${escapeHtml(song.singer)} | 出处: ${escapeHtml(song.works)}</div>
+            `;
+
+            const btnGroup = document.createElement('div');
+            btnGroup.className = 'song-btn-group';
+
+            const btnDirect = document.createElement('button');
+            btnDirect.className = 'btn-order';
+            btnDirect.innerText = '点歌';
+            btnDirect.title = '直接以原调加入队列';
+            btnDirect.addEventListener('click', () => directOrderSong(song, 0));
+
+            const btnPitch = document.createElement('button');
+            btnPitch.className = 'btn-pitch-order';
+            btnPitch.innerText = '变调';
+            btnPitch.title = '选择 Key 后点歌';
+            btnPitch.addEventListener('click', () => openPitchModal(song));
+
+            btnGroup.appendChild(btnDirect);
+            btnGroup.appendChild(btnPitch);
+
+            card.appendChild(info);
+            card.appendChild(btnGroup);
+            listElem.appendChild(card);
+        });
+    }
+
+    async function directOrderSong(songObj, pitchVal = 0) {
+        try {
+            const res = await fetch('/api/queue', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    txtFile: songObj.txtFile,
+                    title: songObj.title,
+                    singer: songObj.singer,
+                    works: songObj.works,
+                    pitch: pitchVal
+                })
+            });
+
+            if (res.ok) {
+                showToast(`已点: ${songObj.title}`);
+            } else {
+                showToast(`点歌失败`, true);
+            }
+        } catch (e) {
+            showToast("网络错误", true);
+        }
+    }
+
+    function openPitchModal(song) {
+        selectedSongObj = song;
+        document.getElementById('modalSongTitle').innerText = song.title;
+        document.getElementById('pitchModal').classList.add('show');
+    }
+
+    function closePitchModal() {
+        document.getElementById('pitchModal').classList.remove('show');
+        selectedSongObj = null;
+    }
+
+    async function confirmOrderWithPitch(pitchVal) {
+        if (!selectedSongObj) return;
+        const songObj = selectedSongObj;
+        closePitchModal();
+        directOrderSong(songObj, pitchVal);
+    }
+
+    function filterSongs() {
+        const keyword = document.getElementById('searchInput').value.toLowerCase();
+        const filtered = allSongs.filter(s => 
+            (s.title && s.title.toLowerCase().includes(keyword)) ||
+            (s.singer && s.singer.toLowerCase().includes(keyword)) ||
+            (s.works && s.works.toLowerCase().includes(keyword))
+        );
+        renderSongs(filtered);
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+
+    loadSongs();
+</script>
+</body>
+</html>

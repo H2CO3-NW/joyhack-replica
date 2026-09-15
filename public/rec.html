@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>RecENT 打轴编辑器</title>
+    <style>
+        body { font-family: sans-serif; background: #1a1a1a; color: #fff; margin: 20px; }
+        .controls { margin-bottom: 15px; display: flex; gap: 10px; align-items: center; }
+        textarea { width: 100%; height: 200px; background: #2b2b2b; color: #00ffff; font-family: monospace; font-size: 16px; border: 1px solid #444; }
+        .instruction { font-size: 13px; color: #aaa; margin-top: 5px; }
+        button { padding: 8px 15px; background: #0088cc; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h2>RecENT 歌词打轴编辑器</h2>
+    <div class="controls">
+        <input type="file" id="audioFile" accept="audio/*">
+        <audio id="audio" controls></audio>
+        <button onclick="exportTxt()">导出打轴文件</button>
+    </div>
+    <div class="instruction">
+        提示：播放音频时，按 <b>[Enter]</b> 写入当前毫秒时间戳并跳到下一行[cite: 2]；按 <b>[Tab]</b> 细分割句[cite: 2]；连续按两次 <b>[Tab]</b> 插入间奏停顿[cite: 2]。
+    </div>
+    <br>
+    <textarea id="lyricText" placeholder="在此黏贴纯文本歌词，每行一句..."></textarea>
+
+<script>
+    const audio = document.getElementById('audio');
+    const lyricText = document.getElementById('lyricText');
+
+    document.getElementById('audioFile').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) audio.src = URL.createObjectURL(file);
+    });
+
+    // 监听键盘打点逻辑 (复刻 JoyHack Rec 机制)[cite: 2]
+    lyricText.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !audio.paused) {
+            e.preventDefault();
+            const timeStr = formatTime(audio.currentTime);
+            const cursorPos = lyricText.selectionStart;
+            const text = lyricText.value;
+            
+            // 在当前光标行首插入 [mm:ss.xx]
+            const lineStart = text.lastIndexOf('\n', cursorPos - 1) + 1;
+            lyricText.value = text.slice(0, lineStart) + `[${timeStr}] ` + text.slice(lineStart);
+        } else if (e.key === 'Tab') {
+            e.preventDefault();
+            // 插入割词标记或空段落[cite: 2]
+            const cursorPos = lyricText.selectionStart;
+            const text = lyricText.value;
+            lyricText.value = text.slice(0, cursorPos) + " / " + text.slice(cursorPos);
+        }
+    });
+
+    function formatTime(seconds) {
+        const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+        const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+        const ms = Math.floor((seconds % 1) * 100).toString().padStart(2, '0');
+        return `${m}:${s}.${ms}`;
+    }
+
+    function exportTxt() {
+        const blob = new Blob([lyricText.value], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'lyric_timed.txt';
+        a.click();
+    }
+</script>
+</body>
+</html>

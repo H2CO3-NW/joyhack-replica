@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>JoyHack Player Engine</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { width: 100%; height: 100%; background-color: #000000; color: #fff; font-family: "Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif; overflow: hidden; }
+        
+        #canvasBg { position: absolute; top:0; left:0; width: 100%; height: 100%; z-index: 1; }
+        video { position: absolute; top:0; left:0; width: 100%; height: 100%; object-fit: contain; z-index: 2; background: transparent; }
+        
+        .hud { position: absolute; top: 20px; left: 20px; font-size: 24px; font-weight: bold; color: #00ffff; text-shadow: 0 0 10px #000; z-index: 10; pointer-events: none; }
+        .song-info { position: absolute; top: 55px; left: 20px; font-size: 15px; color: #aaa; text-shadow: 0 0 5px #000; z-index: 10; }
+
+        .karaoke-display { 
+            position: absolute; bottom: 40px; left: 5%; width: 90%;
+            display: flex; flex-direction: column; justify-content: flex-end; gap: 12px;
+            z-index: 15; pointer-events: none; transition: height 0.2s ease;
+        }
+
+        /* 核心修改：将 gap 设为 0px，消除逐字切分词块之间的强制空隙 */
+        .lyric-row { 
+            font-size: 52px; font-weight: 900; letter-spacing: 2px;
+            height: 80px; line-height: 80px;
+            display: flex; align-items: flex-end; gap: 0px; transition: opacity 0.2s ease;
+        }
+        .row-align-left { justify-content: flex-start; }
+        .row-align-right { justify-content: flex-end; }
+        .row-sub { justify-content: center; font-size: 44px; } 
+
+        ruby { ruby-position: over; text-align: center; }
+        rt { font-size: 20px; font-weight: bold; line-height: 1.0; }
+
+        .karaoke-word-wrapper { position: relative; display: inline-block; line-height: 1.1; margin: 0; padding: 0; }
+        .karaoke-word-base { font-weight: 900; paint-order: stroke fill; }
+        .karaoke-word-active {
+            position: absolute; top: 0; left: 0;
+            font-weight: 900; paint-order: stroke fill;
+            clip-path: polygon(0 0, var(--clip, 0%) 0, var(--clip, 0%) 100%, 0 100%);
+            will-change: clip-path; white-space: nowrap;
+        }
+
+        .control-bar-trigger { position: absolute; bottom: 0; left: 0; width: 100%; height: 70px; z-index: 30; }
+        .control-bar { 
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 50px; 
+            background: rgba(0,0,0,0.85); display: flex; align-items: center; 
+            padding: 0 20px; gap: 15px; border-top: 1px solid #333;
+            transform: translateY(100%); transition: transform 0.3s ease, opacity 0.3s ease;
+            opacity: 0; pointer-events: auto;
+        }
+        .control-bar-trigger:hover .control-bar, .control-bar:hover { transform: translateY(0); opacity: 1; }
+
+        .play-btn { background: #00ffff; color: #000; border: none; padding: 6px 15px; font-weight: bold; cursor: pointer; border-radius: 4px; }
+        .play-btn:disabled { background: #555; color: #888; cursor: not-allowed; }
+        .time-display { font-family: monospace; font-size: 16px; color: #00ffff; min-width: 120px; }
+        .progress-container { flex: 1; height: 8px; background: #333; border-radius: 4px; overflow: hidden; cursor: pointer; position: relative; }
+        .progress-bar { width: 0%; height: 100%; background: #00ffff; }
+        .volume-container { display: flex; align-items: center; gap: 8px; color: #00ffff; font-size: 14px; }
+        .volume-slider { width: 80px; accent-color: #00ffff; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <canvas id="canvasBg"></canvas>
+    <video id="videoPlayer" style="display:none;"></video>
+    
+    <div class="hud" id="hud">等待点歌... [状态: 停止]</div>
+    <div class="song-info" id="songInfo"></div>
+
+    <div class="karaoke-display" id="karaokeDisplay"></div>
+
+    <div class="control-bar-trigger">
+        <div class="control-bar">
+            <button class="play-btn" id="playBtn" onclick="togglePlay()">播放</button>
+            <span class="time-display" id="timeDisplay">00:00 / 00:00</span>
+            <div class="progress-container" onclick="seek(event)">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div class="volume-container">
+                <span>音量</span>
+                <input type="range" min="0" max="1" step="0.01" value="1" class="volume-slider" id="volumeSlider" oninput="setVolume(this.value)">
+            </div>
+        </div>
+    </div>
+
+<script>
+    const { ipcRenderer } = require('electron');
+    const fs = require('fs');
+    const path = require('path');
+    const iconv = require('iconv-lite');
+    const socket = io();
+
+    const video = document.getElementById('videoPlayer');
+    const hud = document.getElementById('hud');
+    const songInfo = document.getElementById('songInfo');
+    const karaokeDisplay = document.getElementById('karaokeDisplay');
+    const timeDisplay = document.getElementById('timeDisplay');
+    const progressBar = document.getElementById('progressBar');
+    const playBtn = document.getElementById('playBtn');
+    const volumeSlider = document.getElementById('volumeSlider');
+
+    let currentMetadata = {};
+    let parsedPhrases = [];
+    let isPlayingQueue = false;
+    
+    let activeMainRowsCount = -1;
+    let activeHasSubSlot = false;
+
+    const canvas = document.getElementById('canvasBg');
+    const ctx = canvas.getContext('2d');
+    function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+    resize();
+    window.addEventListener('resize', resize);
+
+    let particles = Array.from({length: 50}, () => ({
+        x: Math.random() * window.innerWidth, y: Math.random() * window.innerHeight,
+        r: Math.random() * 3 + 1.5, dx: (Math.random() - 0.5) * 1.2, dy: (Math.random() - 0.5) * 1.2,
+        color: Math.random() > 0.5 ? '#00ffff' : '#ff007f'
+    }));
+
+    function renderParticles() {
+        ctx.fillStyle = 'rgba(0, 0, 10, 0.3)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        particles.forEach(p => {
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fillStyle = p.color; ctx.fill();
+            p.x += p.dx; p.y += p.dy;
+            if(p.x < 0 || p.x > canvas.width) p.dx *= -1;
+            if(p.y < 0 || p.y > canvas.height) p.dy *= -1;
+        });
+        requestAnimationFrame(renderParticles);
+    }
+    renderParticles();
+
+    function decodeJapaneseBuffer(buffer) {
+        let str = iconv.decode(buffer, 'cp932');
+        if (str.includes('\uFFFD')) { 
+            let strShiftJis = iconv.decode(buffer, 'Shift_JIS');
+            if (!strShiftJis.includes('\uFFFD')) return strShiftJis;
+            return iconv.decode(buffer, 'utf-8');
+        }
+        return str;
+    }
+
+    ipcRenderer.on('OPEN_KAROKE_FILE', (event, filePath) => {
+        loadAndPlaySong(filePath);
+    });
+
+    socket.on('update-queue', (queue) => {
+        if (!isPlayingQueue && queue.length > 0) {
+            playNextInQueue();
+        }
+    });
+
+    socket.on('broadcast-command', (cmd) => {
+        if (cmd === 'TOGGLE_PLAY') {
+            togglePlay();
+        } else if (cmd === 'NEXT_SONG') {
+            video.pause();
+            isPlayingQueue = false;
+            playNextInQueue();
+        } else if (cmd === 'TOGGLE_VOCAL') {
+            video.muted = !video.muted;
+            hud.innerText = `${currentMetadata.title} [伴唱/原唱: ${video.muted ? '伴唱' : '原唱'}]`;
+        }
+    });
+
+    socket.on('broadcast-seek', (percent) => {
+        if (!isNaN(video.duration) && video.duration > 0) {
+            video.currentTime = (percent / 100) * video.duration;
+        }
+    });
+
+    socket.on('broadcast-volume', (vol) => {
+        video.volume = vol;
+        volumeSlider.value = vol;
+    });
+
+    async function playNextInQueue() {
+        try {
+            const res = await fetch('/api/queue');
+            const queue = await res.json();
+            if (queue.length > 0) {
+                isPlayingQueue = true;
+                const song = queue[0];
+                await fetch('/api/queue/0', { method: 'DELETE' });
+                loadAndPlaySong(song.txtFile);
+            } else {
+                isPlayingQueue = false;
+                hud.innerText = "播放队列已空 [状态: 停止]";
+                songInfo.innerText = "";
+                video.style.display = 'none';
+            }
+        } catch (e) {
+            console.error("处理播放队列失败:", e);
+            isPlayingQueue = false;
+        }
+    }
+
+    function loadAndPlaySong(filePath) {
+        try {
+            if (!fs.existsSync(filePath)) {
+                console.error("找不到文件:", filePath);
+                isPlayingQueue = false;
+                playNextInQueue();
+                return;
+            }
+            const buffer = fs.readFileSync(filePath);
+            const content = decodeJapaneseBuffer(buffer);
+            const dir = path.dirname(filePath);
+
+            currentMetadata = {
+                title: parseTag(content, 'title') || path.basename(filePath, '.txt'),
+                lyrics: parseTag(content, 'lyrics') || 'N/A',
+                music: parseTag(content, 'music') || 'N/A',
+                singer: parseTag(content, 'singer') || 'N/A',
+                works: parseTag(content, 'works') || 'N/A',
+                source: parseTag(content, 'source')
+            };
+
+            let mediaPath = null;
+            if (currentMetadata.source) {
+                let target = path.join(dir, currentMetadata.source.trim());
+                if (fs.existsSync(target)) mediaPath = target;
+            }
+            if (!mediaPath) {
+                const mediaExts = ['.mp3', '.wav', '.m4a', '.mp4', '.mkv'];
+                const files = fs.readdirSync(dir);
+                const found = files.find(f => mediaExts.includes(path.extname(f).toLowerCase()));
+                if (found) mediaPath = path.join(dir, found);
+            }
+
+            parsedPhrases = parseJoyHackLinearStream(content);
+            if (mediaPath) playMedia(mediaPath);
+        } catch (e) {
+            console.error("解析文件失败:", e);
+            isPlayingQueue = false;
+            playNextInQueue();
+        }
+    }
+
+    function parseTag(text, tagName) {
+        const reg = new RegExp(`<${tagName}>([^<]+)`, 'i');
+        const match = text.match(reg);
+        return match ? match[1].trim() : null;
+    }
+
+    function timeCodeToSeconds(tcStr) {
+        const parts = tcStr.split(':');
+        return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10) + (parseInt(parts[2], 10) / 60.0);
+    }
+
+    function parseJoyHackLinearStream(text) {
+        const lines = text.split(/[\r\n]+/);
+        let activeLinesCount = 2;
+        let currentColors = {
+            fillBefore: '#FFFFFF', edgeBefore: '#000000', fillAfter: '#FF0033', edgeAfter: '#FFFFFF',
+            rubyFillBefore: '#FFFFFF', rubyEdgeBefore: '#000000', rubyFillAfter: '#FF0033', rubyEdgeAfter: '#FFFFFF'
+        };
+
+        const phrases = [];
+
+        lines.forEach(line => {
+            if (!line.trim() && !line.includes('\t')) return;
+
+            if (line.match(/^<[a-zA-Z0-9_]+>/) && !line.includes('<time>') && !line.includes('<clear>') && !line.includes('<sub>') && !line.includes('<color>')) {
+                return;
+            }
+
+            let isClear = false;
+            if (line.includes('<clear>')) {
+                isClear = true;
+                const matchNum = line.match(/<clear>([1-4])/);
+                if (matchNum) activeLinesCount = parseInt(matchNum[1], 10);
+            }
+
+            let isSub = false;
+            if (line.includes('<sub>')) {
+                isSub = true;
+                line = line.replace(/<\/?sub>/g, '');
+            }
+
+            if (line.includes('<color>')) {
+                const colorTagMatch = line.match(/<color>([^<\t\r\n]+)/);
+                if (colorTagMatch) {
+                    const cArgs = colorTagMatch[1].split(',');
+                    if (cArgs[0] && cArgs[0].trim()) currentColors.fillBefore = '#' + cArgs[0].trim();
+                    if (cArgs[1] && cArgs[1].trim()) currentColors.edgeBefore = '#' + cArgs[1].trim();
+                    if (cArgs[2] && cArgs[2].trim()) currentColors.fillAfter = '#' + cArgs[2].trim();
+                    if (cArgs[3] && cArgs[3].trim()) currentColors.edgeAfter = '#' + cArgs[3].trim();
+                    if (cArgs[4] && cArgs[4].trim()) currentColors.rubyFillBefore = '#' + cArgs[4].trim();
+                    if (cArgs[5] && cArgs[5].trim()) currentColors.rubyEdgeBefore = '#' + cArgs[5].trim();
+                    if (cArgs[6] && cArgs[6].trim()) currentColors.rubyFillAfter = '#' + cArgs[6].trim();
+                    if (cArgs[7] && cArgs[7].trim()) currentColors.rubyEdgeAfter = '#' + cArgs[7].trim();
+                    line = line.replace(/<color>[^<\t\r\n]+/, '');
+                }
+            }
+
+            const timeTagIndex = line.indexOf('<time>');
+            if (timeTagIndex === -1) {
+                return;
+            }
+
+            const textPart = line.substring(0, timeTagIndex);
+            const timePart = line.substring(timeTagIndex);
+
+            const timeRegex = /\b\d{2}:\d{2}:\d{2}\b/g;
+            const timeMatches = timePart.match(timeRegex);
+            if (!timeMatches || timeMatches.length === 0) return;
+
+            const timeCodes = timeMatches.map(timeCodeToSeconds);
+            const showTime = timeCodes[0];
+            const endTime = timeCodes[timeCodes.length - 1];
+
+            const cleanTextPart = textPart.replace(/<clear>[1-4]?/g, '');
+            const rawWords = cleanTextPart.split('\t');
+
+            const wordList = [];
+            for (let i = 0; i < rawWords.length; i++) {
+                const wText = rawWords[i];
+                const wStart = timeCodes[i] !== undefined ? timeCodes[i] : showTime;
+                const wEnd = timeCodes[i + 1] !== undefined ? timeCodes[i + 1] : endTime;
+
+                let baseText = wText;
+                let rubyText = null;
+                if (baseText.includes('<ruby>')) {
+                    const rParts = baseText.split('<ruby>');
+                    baseText = rParts[0];
+                    rubyText = rParts[1];
+                }
+
+                const isEmptySlot = (baseText === '' || baseText.replace(/[\s\u3000]/g, '') === '');
+
+                wordList.push({
+                    word: baseText,
+                    ruby: rubyText,
+                    isEmpty: isEmptySlot,
+                    start: wStart,
+                    end: wEnd,
+                    color: { ...currentColors }
+                });
+            }
+
+            const isPureClearCmd = isClear && (cleanTextPart.replace(/[\s\u3000\t]/g, '') === '');
+
+            phrases.push({
+                isClearCmd: isPureClearCmd,
+                isSub: isSub,
+                linesCount: activeLinesCount,
+                showTime: showTime,
+                endTime: endTime,
+                words: wordList
+            });
+        });
+
+        phrases.sort((a, b) => a.showTime - b.showTime);
+
+        const pureMainPhrases = phrases.filter(p => !p.isSub && !p.isClearCmd);
+        
+        phrases.forEach(p => {
+            if (p.isSub) {
+                let hostIndex = pureMainPhrases.findIndex(m => p.showTime >= m.showTime && p.showTime <= m.endTime + 1.0);
+                if (hostIndex === -1) {
+                    hostIndex = pureMainPhrases.findIndex(m => m.showTime >= p.showTime);
+                }
+                if (hostIndex === -1 && pureMainPhrases.length > 0) {
+                    hostIndex = pureMainPhrases.length - 1;
+                }
+
+                p.hostMain = hostIndex !== -1 ? pureMainPhrases[hostIndex] : null;
+                p.prevMain = (hostIndex > 0) ? pureMainPhrases[hostIndex - 1] : null;
+            }
+        });
+
+        return phrases;
+    }
+
+    function playMedia(mediaPath) {
+        video.style.display = 'block';
+        video.src = `file://${mediaPath.replace(/\\/g, '/')}`;
+        video.volume = volumeSlider.value;
+        
+        hud.innerText = `${currentMetadata.title} [状态: 播放中]`;
+        songInfo.innerText = `作词: ${currentMetadata.lyrics} | 作曲: ${currentMetadata.music} | 出处: ${currentMetadata.works}`;
+
+        playBtn.disabled = false;
+        playBtn.innerText = "暂停";
+
+        activeMainRowsCount = -1;
+        activeHasSubSlot = false;
+
+        video.play().catch(err => console.log("等待手动触发播放:", err));
+        requestAnimationFrame(animationLoop);
+    }
+
+    function setVolume(val) {
+        video.volume = val;
+        volumeSlider.value = val;
+    }
+
+    video.onended = () => {
+        hud.innerText = `${currentMetadata.title} [状态: 播放完毕]`;
+        karaokeDisplay.innerHTML = "";
+        isPlayingQueue = false;
+        playNextInQueue();
+    };
+
+    video.onseeking = () => {
+        renderFrameAtTime(video.currentTime);
+    };
+
+    video.onseeked = () => {
+        renderFrameAtTime(video.currentTime);
+    };
+
+    video.ontimeupdate = () => {
+        if (!isNaN(video.duration) && video.duration > 0) {
+            const cur = video.currentTime;
+            progressBar.style.width = `${(cur / video.duration) * 100}%`;
+            timeDisplay.innerText = `${formatTime(cur)} / ${formatTime(video.duration)}`;
+            socket.emit('sync-progress', { currentTime: cur, duration: video.duration });
+        }
+    };
+
+    function animationLoop() {
+        if (!video.paused && !video.ended) {
+            renderFrameAtTime(video.currentTime);
+        }
+        requestAnimationFrame(animationLoop);
+    }
+
+    function updateLayoutIfNeeded(mainRowsCount, hasSub) {
+        if (activeMainRowsCount === mainRowsCount && activeHasSubSlot === hasSub) {
+            return;
+        }
+
+        activeMainRowsCount = mainRowsCount;
+        activeHasSubSlot = hasSub;
+
+        karaokeDisplay.innerHTML = "";
+
+        for (let i = 0; i < mainRowsCount; i++) {
+            const row = document.createElement('div');
+            row.className = `lyric-row ${i % 2 === 0 ? 'row-align-left' : 'row-align-right'}`;
+            row.id = `lyricRow_${i}`;
+            karaokeDisplay.appendChild(row);
+        }
+
+        if (hasSub) {
+            const subRow = document.createElement('div');
+            subRow.className = `lyric-row row-sub`;
+            subRow.id = `lyricRow_sub`;
+            karaokeDisplay.appendChild(subRow);
+        }
+    }
+
+    function renderFrameAtTime(curTime) {
+        if (parsedPhrases.length === 0) return;
+
+        const activeClearCmd = parsedPhrases.find(p => p.isClearCmd && curTime >= p.showTime && curTime <= p.endTime);
+        if (activeClearCmd) {
+            karaokeDisplay.innerHTML = "";
+            activeMainRowsCount = -1;
+            activeHasSubSlot = false;
+            return;
+        }
+
+        const pureMains = parsedPhrases.filter(p => !p.isSub && !p.isClearCmd);
+        if (pureMains.length === 0) return;
+
+        const isOpeningPreload = (curTime < pureMains[0].showTime);
+
+        let curIdx = -1;
+        if (isOpeningPreload) {
+            curIdx = 0;
+        } else {
+            for (let i = 0; i < pureMains.length; i++) {
+                if (curTime >= pureMains[i].showTime) {
+                    curIdx = i;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if (curIdx === -1) return;
+
+        const currentMain = pureMains[curIdx];
+        const nextMain = pureMains[curIdx + 1];
+
+        const maxMainRows = currentMain.linesCount || 2;
+
+        const activeSub = parsedPhrases.find(p => {
+            if (!p.isSub || !p.hostMain) return false;
+
+            const delta = p.showTime - p.hostMain.showTime;
+            
+            let isTriggered = false;
+            if (delta <= 1.5) {
+                if (p.prevMain) {
+                    isTriggered = curTime >= p.prevMain.showTime;
+                } else {
+                    isTriggered = curTime >= (p.hostMain.showTime - 2.0);
+                }
+            } else {
+                isTriggered = curTime >= p.hostMain.showTime;
+            }
+
+            if (!isTriggered) return false;
+
+            const hostMainIdx = pureMains.indexOf(p.hostMain);
+            return curIdx <= hostMainIdx;
+        });
+
+        updateLayoutIfNeeded(maxMainRows, !!activeSub);
+
+        const activeRowIdx = maxMainRows >= 2 ? (curIdx % 2) : 0;
+        const previewRowIdx = maxMainRows >= 2 ? ((curIdx + 1) % 2) : -1;
+
+        const activeRowElem = document.getElementById(`lyricRow_${activeRowIdx}`);
+        const previewRowElem = previewRowIdx !== -1 ? document.getElementById(`lyricRow_${previewRowIdx}`) : null;
+
+        // A. 渲染当前主乐句
+        if (activeRowElem) {
+            activeRowElem.innerHTML = buildLineHtml(currentMain);
+            activeRowElem.style.opacity = isOpeningPreload ? "0.5" : "1";
+
+            currentMain.words.forEach((w, wIdx) => {
+                const wordElem = activeRowElem.querySelector(`[data-widx="${wIdx}"] .karaoke-word-active`);
+                if (wordElem) {
+                    let progress = 0;
+                    if (!isOpeningPreload) {
+                        if (curTime >= w.end) {
+                            progress = 100;
+                        } else if (curTime > w.start) {
+                            progress = ((curTime - w.start) / (w.end - w.start)) * 100;
+                        }
+                    }
+                    wordElem.style.setProperty('--clip', `${progress}%`);
+                }
+            });
+        }
+
+        // B. 渲染预读主乐句
+        if (previewRowElem) {
+            if (nextMain && !nextMain.isClearCmd) {
+                previewRowElem.innerHTML = buildLineHtml(nextMain);
+                previewRowElem.style.opacity = "0.5";
+
+                nextMain.words.forEach((w, wIdx) => {
+                    const wordElem = previewRowElem.querySelector(`[data-widx="${wIdx}"] .karaoke-word-active`);
+                    if (wordElem) {
+                        wordElem.style.setProperty('--clip', `0%`);
+                    }
+                });
+            } else {
+                previewRowElem.innerHTML = "";
+            }
+        }
+
+        // C. 渲染 <sub> 和声乐句
+        if (activeSub) {
+            const subElem = document.getElementById(`lyricRow_sub`);
+            if (subElem) {
+                subElem.innerHTML = buildLineHtml(activeSub);
+                subElem.style.opacity = (curTime >= activeSub.showTime) ? "1" : "0.5";
+
+                activeSub.words.forEach((w, wIdx) => {
+                    const wordElem = subElem.querySelector(`[data-widx="${wIdx}"] .karaoke-word-active`);
+                    if (wordElem) {
+                        let progress = 0;
+                        if (curTime >= w.end) {
+                            progress = 100;
+                        } else if (curTime > w.start) {
+                            progress = ((curTime - w.start) / (w.end - w.start)) * 100;
+                        }
+                        wordElem.style.setProperty('--clip', `${progress}%`);
+                    }
+                });
+            }
+        }
+    }
+
+    function getSmoothShadow(color) {
+        return `-1.5px -1.5px 0 ${color}, 1.5px -1.5px 0 ${color}, -1.5px 1.5px 0 ${color}, 1.5px 1.5px 0 ${color}, -2px 0 0 ${color}, 2px 0 0 ${color}, 0 -2px 0 ${color}, 0 2px 0 ${color}, -1px -2px 0 ${color}, 1px -2px 0 ${color}, -1px 2px 0 ${color}, 1px 2px 0 ${color}`;
+    }
+
+    function buildLineHtml(lineData) {
+        return lineData.words.map((w, idx) => {
+            // 对显式空格/空栏词块计算真实占位宽度，普通单字间保留 0 额外空隙
+            if (w.isEmpty) {
+                let spaceWidth = 0;
+                if (w.word && w.word.includes(' ')) {
+                    spaceWidth = 45 * w.word.length; // 全角空格宽度
+                } else if (w.word && w.word.includes(' ')) {
+                    spaceWidth = 22 * w.word.length; // 半角空格宽度
+                }
+                if (spaceWidth > 0) {
+                    return `<div class="karaoke-word-wrapper" data-widx="${idx}" style="display:inline-block; width: ${spaceWidth}px;"></div>`;
+                }
+            }
+
+            let displayText = w.word;
+            let rubyText = w.ruby;
+
+            const c = w.color || {
+                fillBefore: '#FFFFFF', edgeBefore: '#000000',
+                fillAfter: '#FF0033', edgeAfter: '#FFFFFF',
+                rubyFillBefore: '#FFFFFF', rubyEdgeBefore: '#000000',
+                rubyFillAfter: '#FF0033', rubyEdgeAfter: '#FFFFFF'
+            };
+
+            const baseShadow = getSmoothShadow(c.edgeBefore) + ', 0 4px 12px rgba(0,0,0,0.85)';
+            const activeShadow = getSmoothShadow(c.edgeAfter) + ', 0 0 16px ' + c.fillAfter + ', 0 4px 8px rgba(0,0,0,0.9)';
+            
+            const rubyBaseShadow = getSmoothShadow(c.rubyEdgeBefore) + ', 0 0 6px #000';
+            const rubyActiveShadow = getSmoothShadow(c.rubyEdgeAfter) + ', 0 0 8px ' + c.rubyFillAfter;
+
+            let baseInner = displayText;
+            let activeInner = displayText;
+
+            if (rubyText) {
+                baseInner = `<ruby>${displayText}<rt style="color:${c.rubyFillBefore}; text-shadow:${rubyBaseShadow};">${rubyText}</rt></ruby>`;
+                activeInner = `<ruby>${displayText}<rt style="color:${c.rubyFillAfter}; text-shadow:${rubyActiveShadow};">${rubyText}</rt></ruby>`;
+            }
+
+            return `<div class="karaoke-word-wrapper" data-widx="${idx}">
+                <div class="karaoke-word-base" style="color:${c.fillBefore}; text-shadow:${baseShadow};">${baseInner}</div>
+                <div class="karaoke-word-active" style="color:${c.fillAfter}; text-shadow:${activeShadow};">${activeInner}</div>
+            </div>`;
+        }).join("");
+    }
+
+    function togglePlay() {
+        if (video.ended) return;
+        if (video.paused) {
+            video.play(); playBtn.innerText = "暂停";
+            hud.innerText = `${currentMetadata.title} [状态: 播放中]`;
+        } else {
+            video.pause(); playBtn.innerText = "暂停";
+            hud.innerText = `${currentMetadata.title} [状态: 已暂停]`;
+        }
+    }
+
+    function seek(e) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const pos = (e.clientX - rect.left) / rect.width;
+        if (!isNaN(video.duration)) {
+            video.currentTime = pos * video.duration;
+            if (video.ended) { playBtn.disabled = false; playBtn.innerText = "暂停"; video.play(); }
+        }
+    }
+
+    function formatTime(sec) {
+        const m = Math.floor(sec / 60).toString().padStart(2, '0');
+        const s = Math.floor(sec % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
+    }
+
+    ipcRenderer.on('MENU_COMMAND', (event, cmd) => {
+        if (cmd === 'TOGGLE_PLAY') togglePlay();
+        else if (cmd === 'RESTART') { 
+            video.currentTime = 0; playBtn.disabled = false; playBtn.innerText = "暂停"; video.play(); 
+        }
+    });
+</script>
+</body>
+</html>
