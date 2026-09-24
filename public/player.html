@@ -6,6 +6,8 @@
     <script src="http://127.0.0.1:3000/socket.io/socket.io.js"></script>
     <!-- 引入 Tone.js 用于 Phase Vocoder PitchShift 变调 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <!-- 引入 QRCode.js 用于生成点歌地址二维码 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html, body { width: 100%; height: 100%; background-color: #000000; color: #fff; font-family: "Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif; overflow: hidden; }
@@ -15,6 +17,46 @@
         
         .hud { position: absolute; top: 20px; left: 20px; font-size: 24px; font-weight: bold; color: #00ffff; text-shadow: 0 0 10px #000; z-index: 10; pointer-events: none; }
         .song-info { position: absolute; top: 55px; left: 20px; font-size: 15px; color: #aaa; text-shadow: 0 0 5px #000; z-index: 10; }
+
+        /* Title Overlay 画面样式 */
+        .title-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 20; background-color: #0000ff; display: none;
+            flex-direction: column; justify-content: center; align-items: center;
+            padding: 40px; pointer-events: none;
+        }
+        .title-overlay.active { display: flex; pointer-events: auto; }
+        .title-overlay-img {
+            width: 100%; height: 100%; object-fit: contain; display: block;
+        }
+        .title-card-text {
+            display: flex; flex-direction: column; justify-content: center;
+            width: 100%; height: 100%; gap: 20px; color: #ffffff;
+            text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 4px 10px rgba(0,0,0,0.8);
+        }
+        .title-card-title {
+            font-size: 72px; font-weight: 900; line-height: 1.2;
+            word-break: break-word; color: #ffffff; width: 100%; text-align: center;
+        }
+        .title-card-credits {
+            font-size: 26px; font-weight: bold; line-height: 1.6; color: #ffffff; width: 100%; text-align: right;
+        }
+        .title-card-works {
+            font-size: 32px; font-weight: bold; margin-top: 10px; color: #ffffff; width: 100%; text-align: center;
+        }
+        .title-card-singer {
+            font-size: 52px; font-weight: 900; color: #ffffff; width: 100%; text-align: center;
+        }
+
+        /* 预览模式悬浮退出按钮 */
+        .exit-preview-btn {
+            position: absolute; top: 30px; right: 30px; z-index: 25;
+            background: rgba(0, 0, 0, 0.6); color: #00ffff; border: 1px solid #00ffff;
+            padding: 10px 20px; font-size: 16px; font-weight: bold; border-radius: 20px;
+            cursor: pointer; display: none; backdrop-filter: blur(5px);
+            transition: all 0.2s ease;
+        }
+        .exit-preview-btn:hover { background: rgba(0, 255, 255, 0.8); color: #000; }
 
         .karaoke-display { 
             position: absolute; bottom: 40px; left: 5%; width: 90%;
@@ -40,9 +82,7 @@
             font-size: 52px; font-weight: 900; letter-spacing: 0px; white-space: pre;
             vertical-align: bottom;
         }
-        .row-sub .karaoke-word-wrapper {
-            font-size: 44px;
-        }
+        .row-sub .karaoke-word-wrapper { font-size: 44px; }
 
         .karaoke-word-base { font-weight: 900; paint-order: stroke fill; white-space: pre; }
         .karaoke-word-active {
@@ -70,6 +110,7 @@
         .volume-container { display: flex; align-items: center; gap: 8px; color: #00ffff; font-size: 14px; }
         .volume-slider { width: 80px; accent-color: #00ffff; cursor: pointer; }
 
+        /* 模态框及 Tab 选项卡样式 */
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0, 0, 0, 0.7); z-index: 100; display: none;
@@ -78,23 +119,61 @@
         .modal-overlay.show { display: flex; }
         .modal-card {
             background: #222; border: 1px solid #444; border-radius: 8px;
-            width: 520px; padding: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.8);
-            position: relative;
+            width: 720px; max-height: 90vh; padding: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.8);
+            position: relative; display: flex; flex-direction: column;
         }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 15px; }
         .modal-title { font-size: 18px; font-weight: bold; color: #00ffff; }
         .modal-close { background: none; border: none; color: #aaa; font-size: 20px; cursor: pointer; }
         .modal-close:hover { color: #fff; }
-        .form-group { margin-bottom: 20px; }
-        .form-label { display: block; font-size: 14px; color: #ccc; margin-bottom: 8px; }
-        .input-group { display: flex; gap: 10px; }
-        .input-text { flex: 1; background: #111; border: 1px solid #444; border-radius: 4px; padding: 8px 12px; color: #00ffff; font-size: 13px; }
-        .btn-browse { background: #00ffff; color: #000; border: none; padding: 8px 16px; font-weight: bold; border-radius: 4px; cursor: pointer; }
+
+        /* Tab 结构 */
+        .tab-nav { display: flex; gap: 5px; border-bottom: 1px solid #444; margin-bottom: 15px; }
+        .tab-btn {
+            background: #111; color: #888; border: 1px solid #444; border-bottom: none;
+            padding: 8px 16px; font-size: 13px; font-weight: bold; border-radius: 6px 6px 0 0;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .tab-btn.active { background: #333; color: #00ffff; border-color: #00ffff #00ffff #333 #00ffff; }
+
+        .tab-content { display: none; overflow-y: auto; max-height: 60vh; padding-right: 5px; }
+        .tab-content.active { display: block; }
+
+        .form-group { margin-bottom: 15px; }
+        .form-label { display: block; font-size: 13px; color: #ccc; margin-bottom: 6px; }
+        .input-group { display: flex; gap: 10px; align-items: center; }
+        .input-text { flex: 1; background: #111; border: 1px solid #444; border-radius: 4px; padding: 6px 10px; color: #00ffff; font-size: 13px; }
+        .input-number { width: 65px; background: #111; border: 1px solid #444; border-radius: 4px; padding: 6px; color: #00ffff; font-size: 13px; }
+        .input-color { width: 40px; height: 32px; border: none; background: none; cursor: pointer; }
+        .select-custom { background: #111; border: 1px solid #444; border-radius: 4px; padding: 6px; color: #00ffff; font-size: 13px; }
+
+        /* 二维码区域 */
+        .qrcode-box {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: #181818; border: 1px dashed #444; border-radius: 6px;
+            padding: 12px; margin-top: 10px; gap: 8px;
+        }
+        .qrcode-canvas-container {
+            background: #ffffff; padding: 8px; border-radius: 4px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .qrcode-tips { font-size: 12px; color: #aaa; }
+
+        .btn-browse { background: #00ffff; color: #000; border: none; padding: 6px 14px; font-weight: bold; border-radius: 4px; cursor: pointer; }
         .btn-browse:hover { background: #00cccc; }
-        .btn-copy { background: #ffcc00; color: #000; border: none; padding: 8px 16px; font-weight: bold; border-radius: 4px; cursor: pointer; }
+        .btn-copy { background: #ffcc00; color: #000; border: none; padding: 6px 14px; font-weight: bold; border-radius: 4px; cursor: pointer; }
         .btn-copy:hover { background: #e6b800; }
-        .btn-open-admin { width: 100%; background: #ff007f; color: #fff; border: none; padding: 12px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 14px; margin-top: 10px; }
+        .btn-open-admin { width: 100%; background: #ff007f; color: #fff; border: none; padding: 10px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 14px; margin-top: 5px; }
         .btn-open-admin:hover { background: #e00070; }
+
+        .style-grid { display: grid; grid-template-columns: 1.2fr 1fr 0.8fr 1fr; gap: 8px; align-items: center; background: #181818; padding: 10px; border-radius: 6px; margin-bottom: 12px; }
+        .style-grid-title { grid-column: span 4; font-size: 13px; font-weight: bold; color: #00ffff; border-bottom: 1px solid #333; padding-bottom: 4px; margin-bottom: 4px; }
+
+        .modal-footer { display: flex; justify-content: space-between; border-top: 1px solid #333; padding-top: 12px; margin-top: 15px; }
+        .btn-preview { background: #00ff66; color: #000; border: none; padding: 8px 20px; font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .btn-preview:hover { background: #00cc52; }
+        .btn-reset { background: #444; color: #fff; border: none; padding: 8px 16px; font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 13px; }
+        .btn-reset:hover { background: #555; }
 
         #toastContainer { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
         .toast { background: rgba(0, 255, 255, 0.95); color: #000; padding: 12px 20px; font-weight: bold; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-size: 15px; opacity: 0; transform: translateY(-20px); transition: all 0.3s ease; }
@@ -107,6 +186,10 @@
     <video id="videoPlayer" style="display:none;" crossorigin="anonymous"></video>
     <audio id="vocalAudio" style="display:none;" crossorigin="anonymous"></audio>
     
+    <!-- Title Overlay 画面 -->
+    <div class="title-overlay" id="titleOverlay"></div>
+    <button class="exit-preview-btn" id="exitPreviewBtn" onclick="exitTitlePreview()">✕ 退出预览</button>
+
     <div class="hud" id="hud">等待点歌... [状态: 停止]</div>
     <div class="song-info" id="songInfo"></div>
 
@@ -126,29 +209,157 @@
         </div>
     </div>
 
+    <!-- 选项 / 设置 弹窗 -->
     <div class="modal-overlay" id="settingsModal">
         <div class="modal-card">
             <div class="modal-header">
                 <div class="modal-title">⚙ 选项 / 设置</div>
                 <button class="modal-close" onclick="closeSettingsModal()">✕</button>
             </div>
-            <div class="form-group">
-                <label class="form-label">曲库文件夹路径：</label>
-                <div class="input-group">
-                    <input type="text" class="input-text" id="songsDirInput" readonly placeholder="正在获取曲库路径...">
-                    <button class="btn-browse" onclick="browseSongsDir()">浏览...</button>
+
+            <!-- Tab 导航栏 -->
+            <div class="tab-nav">
+                <button class="tab-btn active" onclick="switchTab('general')">常规设置</button>
+                <button class="tab-btn" onclick="switchTab('titleStyle')">歌曲元信息显示画面设定</button>
+            </div>
+
+            <!-- Tab 1: 常规设置 -->
+            <div class="tab-content active" id="tabGeneral">
+                <div class="form-group">
+                    <label class="form-label">曲库文件夹路径：</label>
+                    <div class="input-group">
+                        <input type="text" class="input-text" id="songsDirInput" readonly placeholder="正在获取曲库路径...">
+                        <button class="btn-browse" onclick="browseSongsDir()">浏览...</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">同一 Wi-Fi 下手机/设备点歌地址：</label>
+                    <div class="input-group">
+                        <input type="text" class="input-text" id="lanUrlInput" readonly placeholder="检测网络中...">
+                        <button class="btn-copy" onclick="copyLanUrl()">复制 URL</button>
+                    </div>
+                    <!-- 扫码点歌二维码展示区域 -->
+                    <div class="qrcode-box">
+                        <div class="qrcode-canvas-container" id="qrcodeContainer"></div>
+                        <div class="qrcode-tips">📱 使用 iPhone / 手机相机扫码即可快速打开点歌页面</div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">快捷操作：</label>
+                    <button class="btn-open-admin" onclick="openAdminWeb()">打开网页点歌后台 (http://localhost:3000/admin)</button>
                 </div>
             </div>
-            <div class="form-group">
-                <label class="form-label">同一 Wi-Fi 下手机/设备点歌地址：</label>
-                <div class="input-group">
-                    <input type="text" class="input-text" id="lanUrlInput" readonly placeholder="检测网络中...">
-                    <button class="btn-copy" onclick="copyLanUrl()">复制 URL</button>
+
+            <!-- Tab 2: Title 画面样式设定 -->
+            <div class="tab-content" id="tabTitleStyle">
+                <div class="form-group">
+                    <label class="form-label">Title 画面背景底色：</label>
+                    <div class="input-group">
+                        <input type="color" id="titleBgColorPicker" class="input-color" value="#0000ff" onchange="syncColorInput(this, 'titleBgColorText')">
+                        <input type="text" id="titleBgColorText" class="input-text" value="#0000ff" style="width: 100px;" onchange="syncColorPicker(this, 'titleBgColorPicker')">
+                    </div>
+                </div>
+
+                <!-- 曲名 (Title) 设定 -->
+                <div class="style-grid">
+                    <div class="style-grid-title">曲名 (Title)</div>
+                    <div>字体: 
+                        <select id="titleFontFamily" class="select-custom">
+                            <option value='"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif' selected>默认 (Gothic/YaHei)</option>
+                            <option value='"MS PGothic", "MS UI Gothic", sans-serif'>MS PGothic</option>
+                            <option value='"Meiryo", "メイリオ", sans-serif'>Meiryo</option>
+                            <option value='"Yu Gothic", "游ゴシック", sans-serif'>Yu Gothic</option>
+                            <option value='"Microsoft YaHei", "微软雅黑", sans-serif'>微软雅黑</option>
+                            <option value='sans-serif'>sans-serif (系统无衬线)</option>
+                        </select>
+                    </div>
+                    <div>字号: <input type="number" id="titleFontSize" class="input-number" value="72" min="20" max="150"></div>
+                    <div>颜色: <input type="color" id="titleColor" class="input-color" value="#ffffff"></div>
+                    <div>对齐: 
+                        <select id="titleAlign" class="select-custom">
+                            <option value="center" selected>居中</option>
+                            <option value="left">靠左</option>
+                            <option value="right">靠右</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 作词 / 作曲 (Credits) 设定 -->
+                <div class="style-grid">
+                    <div class="style-grid-title">作词 / 作曲 (Credits)</div>
+                    <div>字体: 
+                        <select id="creditsFontFamily" class="select-custom">
+                            <option value='"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif' selected>默认 (Gothic/YaHei)</option>
+                            <option value='"MS PGothic", "MS UI Gothic", sans-serif'>MS PGothic</option>
+                            <option value='"Meiryo", "メイリオ", sans-serif'>Meiryo</option>
+                            <option value='"Yu Gothic", "游ゴシック", sans-serif'>Yu Gothic</option>
+                            <option value='"Microsoft YaHei", "微软雅黑", sans-serif'>微软雅黑</option>
+                            <option value='sans-serif'>sans-serif (系统无衬线)</option>
+                        </select>
+                    </div>
+                    <div>字号: <input type="number" id="creditsFontSize" class="input-number" value="26" min="12" max="80"></div>
+                    <div>颜色: <input type="color" id="creditsColor" class="input-color" value="#ffffff"></div>
+                    <div>对齐: 
+                        <select id="creditsAlign" class="select-custom">
+                            <option value="right" selected>靠右</option>
+                            <option value="center">居中</option>
+                            <option value="left">靠左</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 出处 (Works) 设定 -->
+                <div class="style-grid">
+                    <div class="style-grid-title">出处 (Works)</div>
+                    <div>字体: 
+                        <select id="worksFontFamily" class="select-custom">
+                            <option value='"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif' selected>默认 (Gothic/YaHei)</option>
+                            <option value='"MS PGothic", "MS UI Gothic", sans-serif'>MS PGothic</option>
+                            <option value='"Meiryo", "メイリオ", sans-serif'>Meiryo</option>
+                            <option value='"Yu Gothic", "游ゴシック", sans-serif'>Yu Gothic</option>
+                            <option value='"Microsoft YaHei", "微软雅黑", sans-serif'>微软雅黑</option>
+                            <option value='sans-serif'>sans-serif (系统无衬线)</option>
+                        </select>
+                    </div>
+                    <div>字号: <input type="number" id="worksFontSize" class="input-number" value="32" min="12" max="100"></div>
+                    <div>颜色: <input type="color" id="worksColor" class="input-color" value="#ffffff"></div>
+                    <div>对齐: 
+                        <select id="worksAlign" class="select-custom">
+                            <option value="center" selected>居中</option>
+                            <option value="left">靠左</option>
+                            <option value="right">靠右</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 歌手名 (Singer) 设定 -->
+                <div class="style-grid">
+                    <div class="style-grid-title">歌手名 (Singer)</div>
+                    <div>字体: 
+                        <select id="singerFontFamily" class="select-custom">
+                            <option value='"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif' selected>默认 (Gothic/YaHei)</option>
+                            <option value='"MS PGothic", "MS UI Gothic", sans-serif'>MS PGothic</option>
+                            <option value='"Meiryo", "メイリオ", sans-serif'>Meiryo</option>
+                            <option value='"Yu Gothic", "游ゴシック", sans-serif'>Yu Gothic</option>
+                            <option value='"Microsoft YaHei", "微软雅黑", sans-serif'>微软雅黑</option>
+                            <option value='sans-serif'>sans-serif (系统无衬线)</option>
+                        </select>
+                    </div>
+                    <div>字号: <input type="number" id="singerFontSize" class="input-number" value="52" min="16" max="120"></div>
+                    <div>颜色: <input type="color" id="singerColor" class="input-color" value="#ffffff"></div>
+                    <div>对齐: 
+                        <select id="singerAlign" class="select-custom">
+                            <option value="center" selected>居中</option>
+                            <option value="left">靠左</option>
+                            <option value="right">靠右</option>
+                        </select>
+                    </div>
                 </div>
             </div>
-            <div class="form-group">
-                <label class="form-label">快捷操作：</label>
-                <button class="btn-open-admin" onclick="openAdminWeb()">打开网页点歌后台 (http://localhost:3000/admin)</button>
+
+            <div class="modal-footer" id="modalFooter">
+                <button class="btn-reset" id="resetStyleBtn" style="display:none;" onclick="resetDefaultTitleStyles()">重置为默认值</button>
+                <button class="btn-preview" id="previewStyleBtn" style="display:none;" onclick="previewTitleOverlay()">👁 预览 Title 画面</button>
             </div>
         </div>
     </div>
@@ -164,6 +375,8 @@
 
     const video = document.getElementById('videoPlayer');
     const vocalAudio = document.getElementById('vocalAudio');
+    const titleOverlay = document.getElementById('titleOverlay');
+    const exitPreviewBtn = document.getElementById('exitPreviewBtn');
     const hud = document.getElementById('hud');
     const songInfo = document.getElementById('songInfo');
     const karaokeDisplay = document.getElementById('karaokeDisplay');
@@ -174,12 +387,15 @@
     const settingsModal = document.getElementById('settingsModal');
     const songsDirInput = document.getElementById('songsDirInput');
     const lanUrlInput = document.getElementById('lanUrlInput');
+    const qrcodeContainer = document.getElementById('qrcodeContainer');
 
     let currentMetadata = {};
     let parsedPhrases = [];
     let isPlayingQueue = false;
     let isVocalEnabled = false;
     let currentPitch = 0;
+    let isPreviewMode = false;
+    let qrCodeObj = null;
 
     let tonePitchShiftNode = null;
     let toneVideoSource = null;
@@ -188,6 +404,168 @@
 
     let activeMainRowsCount = -1;
     let activeHasSubSlot = false;
+
+    // 清空歌词画面及关联缓存状态
+    function clearKaraokeDisplay() {
+        parsedPhrases = [];
+        karaokeDisplay.innerHTML = "";
+        activeMainRowsCount = -1;
+        activeHasSubSlot = false;
+    }
+
+    // Title 默认样式配置对象（含字体属性）
+    const DEFAULT_TITLE_STYLE = {
+        bgColor: '#0000ff',
+        title: { fontFamily: '"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif', fontSize: 72, color: '#ffffff', align: 'center' },
+        credits: { fontFamily: '"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif', fontSize: 26, color: '#ffffff', align: 'right' },
+        works: { fontFamily: '"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif', fontSize: 32, color: '#ffffff', align: 'center' },
+        singer: { fontFamily: '"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif', fontSize: 52, color: '#ffffff', align: 'center' }
+    };
+
+    let titleStyleConfig = loadTitleStyleConfig();
+
+    function loadTitleStyleConfig() {
+        try {
+            const saved = localStorage.getItem('joyhack_title_style');
+            if (saved) return JSON.parse(saved);
+        } catch (e) {
+            console.error(e);
+        }
+        return JSON.parse(JSON.stringify(DEFAULT_TITLE_STYLE));
+    }
+
+    function saveTitleStyleConfig() {
+        try {
+            localStorage.setItem('joyhack_title_style', JSON.stringify(titleStyleConfig));
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    function applyStyleConfigToForm() {
+        document.getElementById('titleBgColorPicker').value = titleStyleConfig.bgColor;
+        document.getElementById('titleBgColorText').value = titleStyleConfig.bgColor;
+
+        document.getElementById('titleFontFamily').value = titleStyleConfig.title.fontFamily || DEFAULT_TITLE_STYLE.title.fontFamily;
+        document.getElementById('titleFontSize').value = titleStyleConfig.title.fontSize;
+        document.getElementById('titleColor').value = titleStyleConfig.title.color;
+        document.getElementById('titleAlign').value = titleStyleConfig.title.align;
+
+        document.getElementById('creditsFontFamily').value = titleStyleConfig.credits.fontFamily || DEFAULT_TITLE_STYLE.credits.fontFamily;
+        document.getElementById('creditsFontSize').value = titleStyleConfig.credits.fontSize;
+        document.getElementById('creditsColor').value = titleStyleConfig.credits.color;
+        document.getElementById('creditsAlign').value = titleStyleConfig.credits.align;
+
+        document.getElementById('worksFontFamily').value = titleStyleConfig.works.fontFamily || DEFAULT_TITLE_STYLE.works.fontFamily;
+        document.getElementById('worksFontSize').value = titleStyleConfig.works.fontSize;
+        document.getElementById('worksColor').value = titleStyleConfig.works.color;
+        document.getElementById('worksAlign').value = titleStyleConfig.works.align;
+
+        document.getElementById('singerFontFamily').value = titleStyleConfig.singer.fontFamily || DEFAULT_TITLE_STYLE.singer.fontFamily;
+        document.getElementById('singerFontSize').value = titleStyleConfig.singer.fontSize;
+        document.getElementById('singerColor').value = titleStyleConfig.singer.color;
+        document.getElementById('singerAlign').value = titleStyleConfig.singer.align;
+    }
+
+    function readStyleConfigFromForm() {
+        titleStyleConfig.bgColor = document.getElementById('titleBgColorText').value || '#0000ff';
+
+        titleStyleConfig.title.fontFamily = document.getElementById('titleFontFamily').value;
+        titleStyleConfig.title.fontSize = parseInt(document.getElementById('titleFontSize').value, 10) || 72;
+        titleStyleConfig.title.color = document.getElementById('titleColor').value;
+        titleStyleConfig.title.align = document.getElementById('titleAlign').value;
+
+        titleStyleConfig.credits.fontFamily = document.getElementById('creditsFontFamily').value;
+        titleStyleConfig.credits.fontSize = parseInt(document.getElementById('creditsFontSize').value, 10) || 26;
+        titleStyleConfig.credits.color = document.getElementById('creditsColor').value;
+        titleStyleConfig.credits.align = document.getElementById('creditsAlign').value;
+
+        titleStyleConfig.works.fontFamily = document.getElementById('worksFontFamily').value;
+        titleStyleConfig.works.fontSize = parseInt(document.getElementById('worksFontSize').value, 10) || 32;
+        titleStyleConfig.works.color = document.getElementById('worksColor').value;
+        titleStyleConfig.works.align = document.getElementById('worksAlign').value;
+
+        titleStyleConfig.singer.fontFamily = document.getElementById('singerFontFamily').value;
+        titleStyleConfig.singer.fontSize = parseInt(document.getElementById('singerFontSize').value, 10) || 52;
+        titleStyleConfig.singer.color = document.getElementById('singerColor').value;
+        titleStyleConfig.singer.align = document.getElementById('singerAlign').value;
+
+        saveTitleStyleConfig();
+    }
+
+    function resetDefaultTitleStyles() {
+        titleStyleConfig = JSON.parse(JSON.stringify(DEFAULT_TITLE_STYLE));
+        saveTitleStyleConfig();
+        applyStyleConfigToForm();
+        showToast("已重置 Title 画面样式为默认值");
+    }
+
+    function syncColorInput(picker, targetId) {
+        document.getElementById(targetId).value = picker.value;
+    }
+
+    function syncColorPicker(input, targetId) {
+        if (/^#[0-9A-F]{6}$/i.test(input.value)) {
+            document.getElementById(targetId).value = input.value;
+        }
+    }
+
+    function renderQRCode(url) {
+        if (!url || url.includes("检测") || url.includes("失败")) return;
+        qrcodeContainer.innerHTML = "";
+        qrCodeObj = new QRCode(qrcodeContainer, {
+            text: url,
+            width: 140,
+            height: 140,
+            colorDark : "#000000",
+            colorLight : "#ffffff",
+            correctLevel : QRCode.CorrectLevel.H
+        });
+    }
+
+    function switchTab(tabName) {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+        if (tabName === 'general') {
+            document.querySelectorAll('.tab-btn')[0].classList.add('active');
+            document.getElementById('tabGeneral').classList.add('active');
+            document.getElementById('previewStyleBtn').style.display = 'none';
+            document.getElementById('resetStyleBtn').style.display = 'none';
+        } else {
+            document.querySelectorAll('.tab-btn')[1].classList.add('active');
+            document.getElementById('tabTitleStyle').classList.add('active');
+            document.getElementById('previewStyleBtn').style.display = 'inline-block';
+            document.getElementById('resetStyleBtn').style.display = 'inline-block';
+            applyStyleConfigToForm();
+        }
+    }
+
+    function previewTitleOverlay() {
+        readStyleConfigFromForm();
+        isPreviewMode = true;
+
+        settingsModal.classList.remove('show');
+
+        const mockMetadata = {
+            title: currentMetadata.title || 'さよならのうた',
+            lyrics: currentMetadata.lyrics || '脇田潤',
+            music: currentMetadata.music || '脇田潤',
+            works: currentMetadata.works || 'ポップンミュージックpeace',
+            singer: currentMetadata.singer || 'aprésmidi'
+        };
+
+        setupTitleOverlay(null, mockMetadata);
+        titleOverlay.classList.add('active');
+        exitPreviewBtn.style.display = 'block';
+    }
+
+    function exitTitlePreview() {
+        isPreviewMode = false;
+        titleOverlay.classList.remove('active');
+        exitPreviewBtn.style.display = 'none';
+        settingsModal.classList.add('show');
+    }
 
     const canvas = document.getElementById('canvasBg');
     const ctx = canvas.getContext('2d');
@@ -304,6 +682,7 @@
             if (resNet.ok) {
                 const dataNet = await resNet.json();
                 lanUrlInput.value = dataNet.lanUrl;
+                renderQRCode(dataNet.lanUrl);
             }
         } catch (e) {
             console.error(e);
@@ -340,9 +719,11 @@
     function openSettingsModal() {
         settingsModal.classList.add('show');
         loadSettingsConfig();
+        switchTab('general');
     }
 
     function closeSettingsModal() {
+        readStyleConfigFromForm();
         settingsModal.classList.remove('show');
     }
 
@@ -386,6 +767,7 @@
         } else if (cmd === 'NEXT_SONG') {
             video.pause();
             vocalAudio.pause();
+            clearKaraokeDisplay(); // 切歌时立即清空画面的歌词
             await fetch(`${SERVER_ORIGIN}/api/queue/0`, { method: 'DELETE' });
             isPlayingQueue = false;
             playNextInQueue();
@@ -406,12 +788,10 @@
         }
     }
 
-    // 网页端指令同步
     socket.on('broadcast-command', (cmd) => {
         executeCommand(cmd);
     });
 
-    // 桌面端顶部菜单栏/快捷键指令同步
     ipcRenderer.on('MENU_COMMAND', (event, cmd) => {
         executeCommand(cmd);
     });
@@ -458,6 +838,11 @@
                 isPlayingQueue = false;
                 hud.innerText = "等待点歌... [状态: 停止]";
                 songInfo.innerText = "";
+                clearKaraokeDisplay(); // 无下一首播放时清空歌词
+                if (!isPreviewMode) {
+                    titleOverlay.classList.remove('active');
+                    titleOverlay.innerHTML = "";
+                }
                 video.style.display = 'none';
                 vocalAudio.pause();
             }
@@ -484,14 +869,16 @@
 
             currentMetadata = {
                 title: parseTag(content, 'title') || path.basename(filePath, '.txt'),
-                lyrics: parseTag(content, 'lyrics') || 'N/A',
-                music: parseTag(content, 'music') || 'N/A',
-                singer: parseTag(content, 'singer') || 'N/A',
-                works: parseTag(content, 'works') || 'N/A',
-                source: parseTag(content, 'source')
+                lyrics: parseTag(content, 'lyrics') || '',
+                music: parseTag(content, 'music') || '',
+                singer: parseTag(content, 'singer') || '',
+                works: parseTag(content, 'works') || '',
+                source: parseTag(content, 'source'),
+                titleimage: parseTag(content, 'titleimage')
             };
 
             const mediaExts = ['.mp3', '.wav', '.m4a', '.mp4', '.mkv'];
+            const imgExts = ['.png', '.jpg', '.jpeg', '.bmp'];
             const files = fs.readdirSync(dir);
 
             let mediaPath = null;
@@ -510,6 +897,19 @@
                 vocalPath = path.join(dir, foundVocal);
             }
 
+            let titleImagePath = null;
+            if (currentMetadata.titleimage) {
+                let targetImg = path.join(dir, currentMetadata.titleimage.trim());
+                if (fs.existsSync(targetImg)) titleImagePath = targetImg;
+            }
+            if (!titleImagePath) {
+                const foundImg = files.find(f => imgExts.includes(path.extname(f).toLowerCase()));
+                if (foundImg) titleImagePath = path.join(dir, foundImg);
+            }
+
+            setupTitleOverlay(titleImagePath);
+
+            clearKaraokeDisplay(); // 载入新曲前先清空旧歌词
             parsedPhrases = parseJoyHackLinearStream(content);
             if (mediaPath) playMedia(mediaPath, vocalPath);
         } catch (e) {
@@ -517,6 +917,39 @@
             fetch(`${SERVER_ORIGIN}/api/queue/0`, { method: 'DELETE' });
             isPlayingQueue = false;
             playNextInQueue();
+        }
+    }
+
+    function setupTitleOverlay(titleImagePath, customData = null) {
+        const meta = customData || currentMetadata;
+        const cfg = titleStyleConfig;
+
+        titleOverlay.style.backgroundColor = cfg.bgColor;
+
+        if (titleImagePath) {
+            const formattedImgPath = titleImagePath.replace(/\\/g, '/');
+            titleOverlay.innerHTML = `<img src="file://${formattedImgPath}" class="title-overlay-img" alt="Title Image">`;
+        } else {
+            let creditsHtml = '';
+            if (meta.lyrics) creditsHtml += `<div>作词: ${meta.lyrics}</div>`;
+            if (meta.music) creditsHtml += `<div>作曲: ${meta.music}</div>`;
+
+            const titleFont = cfg.title.fontFamily ? `font-family:${cfg.title.fontFamily};` : '';
+            const creditsFont = cfg.credits.fontFamily ? `font-family:${cfg.credits.fontFamily};` : '';
+            const worksFont = cfg.works.fontFamily ? `font-family:${cfg.works.fontFamily};` : '';
+            const singerFont = cfg.singer.fontFamily ? `font-family:${cfg.singer.fontFamily};` : '';
+
+            let worksHtml = meta.works ? `<div class="title-card-works" style="${worksFont} font-size:${cfg.works.fontSize}px; color:${cfg.works.color}; text-align:${cfg.works.align};">&lt;『${meta.works}』より&gt;</div>` : '';
+            let singerHtml = meta.singer ? `<div class="title-card-singer" style="${singerFont} font-size:${cfg.singer.fontSize}px; color:${cfg.singer.color}; text-align:${cfg.singer.align};">${meta.singer}</div>` : '';
+
+            titleOverlay.innerHTML = `
+                <div class="title-card-text">
+                    <div class="title-card-title" style="${titleFont} font-size:${cfg.title.fontSize}px; color:${cfg.title.color}; text-align:${cfg.title.align};">${meta.title}</div>
+                    ${creditsHtml ? `<div class="title-card-credits" style="${creditsFont} font-size:${cfg.credits.fontSize}px; color:${cfg.credits.color}; text-align:${cfg.credits.align};">${creditsHtml}</div>` : ''}
+                    ${worksHtml}
+                    ${singerHtml}
+                </div>
+            `;
         }
     }
 
@@ -689,7 +1122,7 @@
         applyAudioMix();
         applyPitchShift(currentPitch);
 
-        songInfo.innerText = `作词: ${currentMetadata.lyrics} | 作曲: ${currentMetadata.music} | 出处: ${currentMetadata.works}`;
+        songInfo.innerText = `作词: ${currentMetadata.lyrics || 'N/A'} | 作曲: ${currentMetadata.music || 'N/A'} | 出处: ${currentMetadata.works || 'N/A'}`;
 
         playBtn.disabled = false;
         playBtn.innerText = "暂停";
@@ -712,7 +1145,8 @@
 
     video.onended = async () => {
         hud.innerText = `${currentMetadata.title} [状态: 播放完毕]`;
-        karaokeDisplay.innerHTML = "";
+        clearKaraokeDisplay(); // 乐曲播放结束时清空歌词
+        if (!isPreviewMode) titleOverlay.classList.remove('active');
         vocalAudio.pause();
         await fetch(`${SERVER_ORIGIN}/api/queue/0`, { method: 'DELETE' });
         isPlayingQueue = false;
@@ -732,6 +1166,14 @@
     video.ontimeupdate = () => {
         if (!isNaN(video.duration) && video.duration > 0) {
             const cur = video.currentTime;
+
+            if (!isPreviewMode) {
+                if (cur < 3.0) {
+                    titleOverlay.classList.add('active');
+                } else {
+                    titleOverlay.classList.remove('active');
+                }
+            }
             
             if (vocalAudio.src && Math.abs(vocalAudio.currentTime - cur) > 0.15) {
                 vocalAudio.currentTime = cur;
@@ -984,6 +1426,7 @@
     function restartSong() {
         video.currentTime = 0;
         if (vocalAudio.src) vocalAudio.currentTime = 0;
+        if (!isPreviewMode) titleOverlay.classList.add('active');
         playBtn.disabled = false;
         playBtn.innerText = "暂停";
         video.play().catch(err => console.log("重新播放受阻:", err));
