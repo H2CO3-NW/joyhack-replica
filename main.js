@@ -254,7 +254,6 @@ function createEditorWindow() {
     });
     editorWindow.loadFile(path.join(__dirname, 'public', 'editor.html'));
 
-    // 纯日文菜单规范，并增加打开文件、新建及首选项（语言切换）
     const editorMenuTemplate = [
         {
             label: 'ファイル',
@@ -426,7 +425,17 @@ function createWindow() {
         {
             label: 'About',
             submenu: [
-                { role: 'about', label: 'About JoyHack Player' }
+                { 
+                    label: 'About JoyHack Player', 
+                    click: () => {
+                        dialog.showMessageBox(mainWindow, {
+                            type: 'info',
+                            title: 'About JoyHack Player Engine',
+                            message: 'JoyHack Player Engine',
+                            detail: 'Version: v0.8.1 (Build 2026)\nCustom Karaoke Engine for JoyHack.'
+                        });
+                    } 
+                }
             ]
         }
     ];
