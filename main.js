@@ -276,7 +276,8 @@ function createEditorWindow() {
                             try {
                                 const buffer = fs.readFileSync(filePath);
                                 const content = decodeJapaneseBuffer(buffer);
-                                editorWindow.webContents.send('LOAD_SONG_CONTENT', { filePath, content });
+                                const fileName = path.basename(filePath);
+                                editorWindow.webContents.send('LOAD_SONG_CONTENT', { filePath, fileName, content });
                             } catch (e) {
                                 console.error("读取文件失败", e);
                             }
@@ -288,6 +289,11 @@ function createEditorWindow() {
                     label: '保存', 
                     accelerator: 'CmdOrCtrl+S', 
                     click: () => editorWindow.webContents.send('EDITOR_CMD', 'SAVE') 
+                },
+                { 
+                    label: '別名で保存...', 
+                    accelerator: 'CmdOrCtrl+Shift+S', 
+                    click: () => editorWindow.webContents.send('EDITOR_CMD', 'SAVE_AS') 
                 },
                 { type: 'separator' },
                 { 
