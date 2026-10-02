@@ -396,6 +396,7 @@
     let currentPitch = 0;
     let isPreviewMode = false;
     let qrCodeObj = null;
+    let titleTimer = null;
 
     let tonePitchShiftNode = null;
     let toneVideoSource = null;
@@ -405,7 +406,6 @@
     let activeMainRowsCount = -1;
     let activeHasSubSlot = false;
 
-    // 清空歌词画面及关联缓存状态
     function clearKaraokeDisplay() {
         parsedPhrases = [];
         karaokeDisplay.innerHTML = "";
@@ -413,7 +413,6 @@
         activeHasSubSlot = false;
     }
 
-    // Title 默认样式配置对象（含字体属性）
     const DEFAULT_TITLE_STYLE = {
         bgColor: '#0000ff',
         title: { fontFamily: '"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif', fontSize: 72, color: '#ffffff', align: 'center' },
@@ -548,11 +547,11 @@
         settingsModal.classList.remove('show');
 
         const mockMetadata = {
-            title: currentMetadata.title || 'さよならのうた',
-            lyrics: currentMetadata.lyrics || '脇田潤',
-            music: currentMetadata.music || '脇田潤',
-            works: currentMetadata.works || 'ポップンミュージックpeace',
-            singer: currentMetadata.singer || 'aprésmidi'
+            title: currentMetadata.title || 'せめて今夜だけは',
+            lyrics: currentMetadata.lyrics || 'なんだあらんど',
+            music: currentMetadata.music || '北村勝彦',
+            works: currentMetadata.works || 'クレヨンしんちゃん',
+            singer: currentMetadata.singer || 'ひろし＆みさえ'
         };
 
         setupTitleOverlay(null, mockMetadata);
@@ -767,7 +766,8 @@
         } else if (cmd === 'NEXT_SONG') {
             video.pause();
             vocalAudio.pause();
-            clearKaraokeDisplay(); // 切歌时立即清空画面的歌词
+            if (titleTimer) clearTimeout(titleTimer);
+            clearKaraokeDisplay();
             await fetch(`${SERVER_ORIGIN}/api/queue/0`, { method: 'DELETE' });
             isPlayingQueue = false;
             playNextInQueue();
@@ -838,7 +838,8 @@
                 isPlayingQueue = false;
                 hud.innerText = "等待点歌... [状态: 停止]";
                 songInfo.innerText = "";
-                clearKaraokeDisplay(); // 无下一首播放时清空歌词
+                if (titleTimer) clearTimeout(titleTimer);
+                clearKaraokeDisplay();
                 if (!isPreviewMode) {
                     titleOverlay.classList.remove('active');
                     titleOverlay.innerHTML = "";
@@ -909,7 +910,7 @@
 
             setupTitleOverlay(titleImagePath);
 
-            clearKaraokeDisplay(); // 载入新曲前先清空旧歌词
+            clearKaraokeDisplay();
             parsedPhrases = parseJoyHackLinearStream(content);
             if (mediaPath) playMedia(mediaPath, vocalPath);
         } catch (e) {
@@ -1076,19 +1077,28 @@
 
         phrases.sort((a, b) => a.showTime - b.showTime);
 
-        const pureMainPhrases = phrases.filter(p => !p.isSub && !p.isClearCmd);
-        
-        let currentLinesMode = -1;
+        // 核心修正 1：在遇到的每一个 <clear> 节点处彻底重置槽位与模式状态，阻断上段残存槽位污染
         let modeCounter = 0;
+        let currentLinesMode = -1;
 
-        pureMainPhrases.forEach((p) => {
-            if (p.linesCount !== currentLinesMode) {
-                currentLinesMode = p.linesCount;
+        phrases.forEach((p) => {
+            if (p.isClearCmd) {
                 modeCounter = 0;
+                currentLinesMode = -1; // 同时重置 linesMode，确保 clear 后的第一句歌词必定处于 Row 0
+                return;
             }
-            p.inModeIndex = modeCounter;
-            modeCounter++;
+
+            if (!p.isSub) {
+                if (p.linesCount !== currentLinesMode) {
+                    currentLinesMode = p.linesCount;
+                    modeCounter = 0;
+                }
+                p.inModeIndex = modeCounter;
+                modeCounter++;
+            }
         });
+
+        const pureMainPhrases = phrases.filter(p => !p.isSub && !p.isClearCmd);
         
         phrases.forEach(p => {
             if (p.isSub) {
@@ -1130,10 +1140,26 @@
         activeMainRowsCount = -1;
         activeHasSubSlot = false;
 
-        video.play().catch(err => console.log("等待手动触发播放:", err));
-        if (vocalPath) {
-            vocalAudio.play().catch(err => console.log("原唱轨同步受阻:", err));
-        }
+        video.currentTime = 0;
+        if (vocalPath) vocalAudio.currentTime = 0;
+        video.pause();
+        if (vocalPath) vocalAudio.pause();
+
+        if (titleTimer) clearTimeout(titleTimer);
+
+        titleOverlay.classList.add('active');
+        hud.innerText = `${currentMetadata.title} [准备播放...]`;
+
+        titleTimer = setTimeout(() => {
+            if (!isPreviewMode) {
+                titleOverlay.classList.remove('active');
+            }
+            video.play().catch(err => console.log("等待手动触发播放:", err));
+            if (vocalPath) {
+                vocalAudio.play().catch(err => console.log("原唱轨同步受阻:", err));
+            }
+            updateHudDisplay();
+        }, 3000);
 
         requestAnimationFrame(animationLoop);
     }
@@ -1145,7 +1171,7 @@
 
     video.onended = async () => {
         hud.innerText = `${currentMetadata.title} [状态: 播放完毕]`;
-        clearKaraokeDisplay(); // 乐曲播放结束时清空歌词
+        clearKaraokeDisplay();
         if (!isPreviewMode) titleOverlay.classList.remove('active');
         vocalAudio.pause();
         await fetch(`${SERVER_ORIGIN}/api/queue/0`, { method: 'DELETE' });
@@ -1166,14 +1192,6 @@
     video.ontimeupdate = () => {
         if (!isNaN(video.duration) && video.duration > 0) {
             const cur = video.currentTime;
-
-            if (!isPreviewMode) {
-                if (cur < 3.0) {
-                    titleOverlay.classList.add('active');
-                } else {
-                    titleOverlay.classList.remove('active');
-                }
-            }
             
             if (vocalAudio.src && Math.abs(vocalAudio.currentTime - cur) > 0.15) {
                 vocalAudio.currentTime = cur;
@@ -1234,6 +1252,7 @@
     function renderFrameAtTime(curTime) {
         if (parsedPhrases.length === 0) return;
 
+        // 1. 检查当前时刻是否处于某个 <clear> 执行区
         const activeClearCmd = parsedPhrases.find(p => p.isClearCmd && curTime >= p.showTime && curTime <= p.endTime);
         if (activeClearCmd) {
             karaokeDisplay.innerHTML = "";
@@ -1245,25 +1264,47 @@
         const pureMains = parsedPhrases.filter(p => !p.isSub && !p.isClearCmd);
         if (pureMains.length === 0) return;
 
-        const isOpeningPreload = (curTime < pureMains[0].showTime);
+        // 2. 查找当前时间之前触发的最后一个 <clear> 节点
+        const clearCmdsBeforeCur = parsedPhrases.filter(p => p.isClearCmd && curTime >= p.endTime);
+        let lastClearTime = -1;
+        if (clearCmdsBeforeCur.length > 0) {
+            lastClearTime = clearCmdsBeforeCur[clearCmdsBeforeCur.length - 1].endTime;
+        }
 
-        let curIdx = -1;
-        if (isOpeningPreload) {
-            curIdx = 0;
+        // 3. 根据最近一次 <clear> 分隔离出的块过滤有效歌词
+        let currentBlockMains = [];
+        if (lastClearTime !== -1) {
+            currentBlockMains = pureMains.filter(m => m.showTime >= lastClearTime);
         } else {
-            for (let i = 0; i < pureMains.length; i++) {
-                if (curTime >= pureMains[i].showTime) {
-                    curIdx = i;
+            currentBlockMains = pureMains;
+        }
+
+        if (currentBlockMains.length === 0) {
+            karaokeDisplay.innerHTML = "";
+            return;
+        }
+
+        // 4. 定位焦点歌词与预渲染歌词
+        let localIdx = -1;
+        let isOpeningPreload = false;
+
+        if (curTime < currentBlockMains[0].showTime) {
+            localIdx = 0;
+            isOpeningPreload = true;
+        } else {
+            for (let i = 0; i < currentBlockMains.length; i++) {
+                if (curTime >= currentBlockMains[i].showTime) {
+                    localIdx = i;
                 } else {
                     break;
                 }
             }
         }
 
-        if (curIdx === -1) return;
+        if (localIdx === -1) return;
 
-        const currentMain = pureMains[curIdx];
-        const nextMain = pureMains[curIdx + 1];
+        const currentMain = currentBlockMains[localIdx];
+        const nextMain = currentBlockMains[localIdx + 1];
 
         const maxMainRows = currentMain.linesCount || 2;
 
@@ -1300,13 +1341,16 @@
 
         updateLayoutIfNeeded(maxMainRows, !!activeSub);
 
-        const currentSlotIdx = currentMain.inModeIndex !== undefined ? currentMain.inModeIndex : curIdx;
-        const activeRowIdx = maxMainRows > 1 ? (currentSlotIdx % maxMainRows) : 0;
+        // 5. 精准槽位映射逻辑（防止预加载与当期槽位互相挤占）
+        const activeRowIdx = maxMainRows > 1 ? (currentMain.inModeIndex % maxMainRows) : 0;
         
         let previewRowIdx = -1;
         if (nextMain && nextMain.linesCount === maxMainRows && !nextMain.isClearCmd) {
-            const nextSlotIdx = nextMain.inModeIndex !== undefined ? nextMain.inModeIndex : (curIdx + 1);
-            previewRowIdx = maxMainRows > 1 ? (nextSlotIdx % maxMainRows) : -1;
+            const targetPreviewRow = nextMain.inModeIndex % maxMainRows;
+            // 只有预加载槽位与当前开唱槽位不冲突时才开启预加载
+            if (targetPreviewRow !== activeRowIdx) {
+                previewRowIdx = targetPreviewRow;
+            }
         }
 
         const activeRowElem = document.getElementById(`lyricRow_${activeRowIdx}`);
@@ -1411,6 +1455,11 @@
     function togglePlay() {
         if (video.ended) return;
         if (video.paused) {
+            if (titleTimer) {
+                clearTimeout(titleTimer);
+                titleTimer = null;
+                if (!isPreviewMode) titleOverlay.classList.remove('active');
+            }
             video.play();
             if (vocalAudio.src) vocalAudio.play();
             playBtn.innerText = "暂停";
@@ -1424,22 +1473,41 @@
     }
 
     function restartSong() {
+        if (titleTimer) clearTimeout(titleTimer);
+
         video.currentTime = 0;
         if (vocalAudio.src) vocalAudio.currentTime = 0;
-        if (!isPreviewMode) titleOverlay.classList.add('active');
+        video.pause();
+        if (vocalAudio.src) vocalAudio.pause();
+
         playBtn.disabled = false;
         playBtn.innerText = "暂停";
-        video.play().catch(err => console.log("重新播放受阻:", err));
-        if (vocalAudio.src) {
-            vocalAudio.play().catch(err => console.log("原唱轨同步受阻:", err));
-        }
-        updateHudDisplay();
+
+        titleOverlay.classList.add('active');
+        hud.innerText = `${currentMetadata.title} [准备播放...]`;
+
+        titleTimer = setTimeout(() => {
+            if (!isPreviewMode) {
+                titleOverlay.classList.remove('active');
+            }
+            video.play().catch(err => console.log("重新播放受阻:", err));
+            if (vocalAudio.src) {
+                vocalAudio.play().catch(err => console.log("原唱轨同步受阻:", err));
+            }
+            updateHudDisplay();
+        }, 3000);
     }
 
     function seek(e) {
         const rect = e.currentTarget.getBoundingClientRect();
         const pos = (e.clientX - rect.left) / rect.width;
         if (!isNaN(video.duration)) {
+            if (titleTimer) {
+                clearTimeout(titleTimer);
+                titleTimer = null;
+                if (!isPreviewMode) titleOverlay.classList.remove('active');
+            }
+
             const t = pos * video.duration;
             video.currentTime = t;
             if (vocalAudio.src) vocalAudio.currentTime = t;
