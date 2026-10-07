@@ -36,14 +36,46 @@
         }
         .tab-content.active { display: flex; }
 
+        .breadcrumb-bar {
+            display: flex; align-items: center; justify-content: space-between;
+            background: #1a2a2a; border: 1px solid #00ffff; border-radius: 8px;
+            padding: 10px 14px; margin-bottom: 12px; font-size: 14px; color: #00ffff; font-weight: bold;
+            flex-shrink: 0;
+        }
+        .btn-back {
+            background: #00ffff; color: #000; border: none; padding: 6px 14px;
+            border-radius: 4px; font-size: 13px; font-weight: bold; cursor: pointer;
+        }
+        .btn-back:active { transform: scale(0.96); }
+
         .search-box { 
-            width: 100%; padding: 12px 15px; font-size: 16px; 
+            width: 100%; padding: 12px 15px; font-size: 15px; 
             background: #222; border: 1px solid #444; color: #fff; border-radius: 8px; 
-            margin-bottom: 15px; outline: none; transition: border-color 0.2s;
+            margin-bottom: 12px; outline: none; transition: border-color 0.2s;
             flex-shrink: 0;
         }
         .search-box:focus { border-color: #00ffff; }
-        .song-list { display: flex; flex-direction: column; gap: 10px; padding-bottom: 20px; }
+
+        .song-list { display: flex; flex-direction: column; gap: 12px; padding-bottom: 20px; }
+
+        .main-menu-card {
+            background: #1e1e1e; border: 1px solid #333; border-left: 6px solid #00ffff;
+            padding: 20px 20px; border-radius: 8px; display: flex; justify-content: space-between;
+            align-items: center; cursor: pointer; transition: all 0.2s;
+        }
+        .main-menu-card:active { background: #2a2a2a; transform: scale(0.98); }
+        .main-menu-title { font-size: 18px; font-weight: bold; color: #fff; }
+        .main-menu-arrow { font-size: 18px; color: #00ffff; font-weight: bold; }
+
+        .group-card {
+            background: #1f1f1f; border-left: 4px solid #ff007f; padding: 16px 18px;
+            border-radius: 6px; display: flex; justify-content: space-between; align-items: center;
+            cursor: pointer; transition: background 0.2s;
+        }
+        .group-card:active { background: #2a2a2a; transform: scale(0.98); }
+        .group-name { font-size: 16px; font-weight: bold; color: #fff; }
+        .group-count { font-size: 13px; color: #aaa; background: #333; padding: 3px 10px; border-radius: 12px; }
+
         .song-card { 
             background: #222; border-left: 4px solid #00ffff; padding: 12px 15px; 
             border-radius: 6px; display: flex; justify-content: space-between; align-items: center; gap: 10px;
@@ -83,9 +115,7 @@
         .btn-cyan { background-color: #00ffff; color: #000; }
         .btn-pink { background-color: #ff007f; color: #fff; }
         .btn-yellow { background-color: #ffcc00; color: #000; }
-        .btn-green { background-color: #00cc66; color: #000; }
 
-        /* 升降调控制面板 */
         .pitch-box { background: #222; padding: 15px 18px; border-radius: 8px; border: 1px solid #333; display: flex; flex-direction: column; gap: 10px; }
         .pitch-header { display: flex; justify-content: space-between; font-size: 14px; color: #00ffff; font-weight: bold; }
         .pitch-btn-group { display: flex; gap: 8px; align-items: center; }
@@ -102,7 +132,6 @@
         .volume-label { font-size: 15px; font-weight: bold; color: #00ffff; }
         .volume-slider { width: 60%; accent-color: #00ffff; cursor: pointer; height: 6px; }
 
-        /* 底部 TAB 栏适配 iOS Safe Area */
         .tab-bar { 
             background: #1a1a1a; 
             border-top: 1px solid #2a2a2a; 
@@ -118,7 +147,6 @@
         .tab-item.active { color: #00ffff; }
         .tab-icon { font-size: 18px; }
 
-        /* 点歌调高预设 Modal */
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.75); z-index: 1000; display: none;
@@ -151,7 +179,13 @@
     <div class="content-container">
         <!-- TAB 1: 歌曲选曲界面 -->
         <div class="tab-content active" id="tabSongs">
-            <input type="text" class="search-box" id="searchInput" placeholder="🔍 搜索歌名、歌手、出处..." oninput="filterSongs()">
+            <div class="breadcrumb-bar" id="breadcrumbBar" style="display: none;">
+                <span id="breadcrumbText">分类导航</span>
+                <button class="btn-back" onclick="navigateBack()">返回上级</button>
+            </div>
+
+            <input type="text" class="search-box" id="searchInput" style="display: none;" placeholder="🔍 快速筛选..." oninput="handleSearchInput()">
+
             <div class="song-list" id="songList"></div>
         </div>
 
@@ -165,12 +199,10 @@
             <div class="control-panel">
                 <div class="quick-btns">
                     <button class="btn-ctrl btn-cyan" onclick="sendCommand('TOGGLE_PLAY')">⏯ 播放 / 暂停</button>
-                    <button class="btn-ctrl btn-green" onclick="sendCommand('RESTART')">🔄 重新播放当前乐曲</button>
                     <button class="btn-ctrl btn-pink" onclick="sendCommand('NEXT_SONG')">⏭ 切歌 (下一首)</button>
                     <button class="btn-ctrl btn-yellow" onclick="sendCommand('TOGGLE_VOCAL')">🎤 伴唱 / 原唱 切换</button>
                 </div>
 
-                <!-- 实时升降调控制板 -->
                 <div class="pitch-box">
                     <div class="pitch-header">
                         <span>乐曲升降调控制</span>
@@ -241,6 +273,12 @@
     let allSongs = [];
     let currentPitch = 0;
     let selectedSongObj = null;
+
+    let currentLevel = 1; 
+    let selectedMode = null; 
+    let selectedGroupKey = null; 
+
+    const jaCollator = new Intl.Collator('ja-JP', { numeric: true, sensitivity: 'base' });
 
     function showToast(message, isError = false) {
         const container = document.getElementById('toastContainer');
@@ -315,9 +353,10 @@
 
     async function loadSongs() {
         try {
-            const res = await fetch('/api/songs');
+            // 加入时间戳强制击穿浏览器 GET 请求强缓存
+            const res = await fetch(`/api/songs?t=${new Date().getTime()}`);
             allSongs = await res.json();
-            renderSongs(allSongs);
+            renderView();
         } catch (e) {
             console.error("加载曲库失败:", e);
         }
@@ -447,9 +486,185 @@
         }
     }
 
+    function enterCategory(mode) {
+        selectedMode = mode;
+        selectedGroupKey = null;
+        document.getElementById('searchInput').value = '';
+
+        if (mode === 'ALL') {
+            currentLevel = 3;
+        } else {
+            currentLevel = 2;
+        }
+        renderView();
+    }
+
+    function enterGroup(groupKey) {
+        selectedGroupKey = groupKey;
+        document.getElementById('searchInput').value = '';
+        currentLevel = 3;
+        renderView();
+    }
+
+    function navigateBack() {
+        document.getElementById('searchInput').value = '';
+        if (currentLevel === 3) {
+            if (selectedMode === 'ALL') {
+                currentLevel = 1;
+                selectedMode = null;
+            } else {
+                currentLevel = 2;
+                selectedGroupKey = null;
+            }
+        } else if (currentLevel === 2) {
+            currentLevel = 1;
+            selectedMode = null;
+        }
+        renderView();
+    }
+
+    function handleSearchInput() {
+        renderView();
+    }
+
+    function renderView() {
+        const listElem = document.getElementById('songList');
+        const breadcrumbBar = document.getElementById('breadcrumbBar');
+        const breadcrumbText = document.getElementById('breadcrumbText');
+        const searchInput = document.getElementById('searchInput');
+        const keyword = searchInput.value.trim().toLowerCase();
+
+        listElem.innerHTML = '';
+
+        if (currentLevel === 1) {
+            breadcrumbBar.style.display = 'none';
+            searchInput.style.display = 'none';
+
+            const menus = [
+                { id: 'ALL', name: '显示全曲' },
+                { id: 'SINGER', name: '歌手名' },
+                { id: 'WORKS', name: '作品名' },
+                { id: 'YEAR', name: '发表年' }
+            ];
+
+            menus.forEach(menu => {
+                const card = document.createElement('div');
+                card.className = 'main-menu-card';
+                card.innerHTML = `
+                    <div class="main-menu-title">${menu.name}</div>
+                    <div class="main-menu-arrow">❯</div>
+                `;
+                card.addEventListener('click', () => enterCategory(menu.id));
+                listElem.appendChild(card);
+            });
+            return;
+        }
+
+        breadcrumbBar.style.display = 'flex';
+        searchInput.style.display = 'block';
+
+        let modeName = '';
+        if (selectedMode === 'ALL') modeName = '全曲列表';
+        if (selectedMode === 'SINGER') modeName = '歌手名';
+        if (selectedMode === 'WORKS') modeName = '作品名';
+        if (selectedMode === 'YEAR') modeName = '发表年';
+
+        if (currentLevel === 2) {
+            breadcrumbText.innerText = `曲库点歌 > ${modeName}`;
+            searchInput.placeholder = `🔍 快速筛选${modeName}...`;
+
+            const groupMap = new Map();
+
+            allSongs.forEach(s => {
+                let key = '其他 / 未知';
+                if (selectedMode === 'SINGER') key = s.singer || '其他 / 未知';
+                if (selectedMode === 'WORKS') key = s.works || '其他 / 未知';
+                if (selectedMode === 'YEAR') key = s.year || '未知年份';
+
+                // 强制转为字符串，防止 Map key 出现数字格式混淆
+                key = String(key);
+
+                if (!groupMap.has(key)) {
+                    groupMap.set(key, 0);
+                }
+                groupMap.set(key, groupMap.get(key) + 1);
+            });
+
+            let sortedGroupKeys = [];
+            if (selectedMode === 'YEAR') {
+                sortedGroupKeys = Array.from(groupMap.keys()).sort((a, b) => {
+                    if (a === '未知年份') return 1;
+                    if (b === '未知年份') return -1;
+                    return parseInt(b, 10) - parseInt(a, 10);
+                });
+            } else {
+                sortedGroupKeys = Array.from(groupMap.keys()).sort((a, b) => jaCollator.compare(a, b));
+            }
+
+            if (keyword) {
+                sortedGroupKeys = sortedGroupKeys.filter(k => String(k).toLowerCase().includes(keyword));
+            }
+
+            if (sortedGroupKeys.length === 0) {
+                listElem.innerHTML = '<div style="color: #666; text-align: center; padding: 40px 20px;">未匹配到相关分类</div>';
+                return;
+            }
+
+            sortedGroupKeys.forEach(groupName => {
+                const count = groupMap.get(groupName);
+                const card = document.createElement('div');
+                card.className = 'group-card';
+                card.innerHTML = `
+                    <div class="group-name">${escapeHtml(groupName)}</div>
+                    <div class="group-count">${count} 首</div>
+                `;
+                card.addEventListener('click', () => enterGroup(groupName));
+                listElem.appendChild(card);
+            });
+            return;
+        }
+
+        if (selectedMode === 'ALL') {
+            breadcrumbText.innerText = `曲库点歌 > 全曲列表`;
+        } else {
+            breadcrumbText.innerText = `${modeName} > ${selectedGroupKey}`;
+        }
+        searchInput.placeholder = `🔍 快速筛选歌名、读音、歌手...`;
+
+        let targetSongs = [];
+        if (selectedMode === 'ALL') {
+            targetSongs = [...allSongs];
+        } else {
+            targetSongs = allSongs.filter(s => {
+                if (selectedMode === 'SINGER') return String(s.singer || '其他 / 未知') === selectedGroupKey;
+                if (selectedMode === 'WORKS') return String(s.works || '其他 / 未知') === selectedGroupKey;
+                if (selectedMode === 'YEAR') return String(s.year || '未知年份') === selectedGroupKey;
+                return false;
+            });
+        }
+
+        if (keyword) {
+            // 加入 String() 类型保护防线，防止非字符串隐式调用引发崩溃
+            targetSongs = targetSongs.filter(s => 
+                (s.title && String(s.title).toLowerCase().includes(keyword)) ||
+                (s.singer && String(s.singer).toLowerCase().includes(keyword)) ||
+                (s.works && String(s.works).toLowerCase().includes(keyword)) ||
+                (s.year && String(s.year).toLowerCase().includes(keyword)) ||
+                (s.searchKey && String(s.searchKey).toLowerCase().includes(keyword))
+            );
+        }
+
+        targetSongs.sort((a, b) => jaCollator.compare(a.searchKey || a.title, b.searchKey || b.title));
+        renderSongs(targetSongs);
+    }
+
     function renderSongs(songs) {
         const listElem = document.getElementById('songList');
-        listElem.innerHTML = '';
+
+        if (songs.length === 0) {
+            listElem.innerHTML = '<div style="color: #666; text-align: center; padding: 40px 20px;">未匹配到相关乐曲</div>';
+            return;
+        }
 
         songs.forEach((song) => {
             const card = document.createElement('div');
@@ -457,9 +672,11 @@
 
             const info = document.createElement('div');
             info.className = 'song-info-box';
+            
+            // 加入容错保护：即便是未解析字段也能提供安全的后备字符串
             info.innerHTML = `
-                <div class="song-title">${escapeHtml(song.title)}</div>
-                <div class="song-meta">歌手: ${escapeHtml(song.singer)} | 出处: ${escapeHtml(song.works)}</div>
+                <div class="song-title">${escapeHtml(song.title || '未知歌名')}</div>
+                <div class="song-meta">歌手: ${escapeHtml(song.singer || '未知')} | 出处: ${escapeHtml(song.works || '未知')} | 年份: ${escapeHtml(song.year || '未知年份')}</div>
             `;
 
             const btnGroup = document.createElement('div');
@@ -496,6 +713,7 @@
                     title: songObj.title,
                     singer: songObj.singer,
                     works: songObj.works,
+                    year: songObj.year,
                     pitch: pitchVal
                 })
             });
@@ -528,22 +746,15 @@
         directOrderSong(songObj, pitchVal);
     }
 
-    function filterSongs() {
-        const keyword = document.getElementById('searchInput').value.toLowerCase();
-        const filtered = allSongs.filter(s => 
-            (s.title && s.title.toLowerCase().includes(keyword)) ||
-            (s.singer && s.singer.toLowerCase().includes(keyword)) ||
-            (s.works && s.works.toLowerCase().includes(keyword))
-        );
-        renderSongs(filtered);
-    }
-
+    // 严密加固型字符转移函数，拦截所有潜在类型崩溃
     function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        if (str === null || str === undefined || str === '') return '';
+        return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     }
 
-    loadSongs();
+    window.addEventListener('DOMContentLoaded', () => {
+        loadSongs();
+    });
 </script>
 </body>
 </html>
