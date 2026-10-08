@@ -8,6 +8,10 @@
     <script src="libs/tone.min.js"></script>
     <!-- 本地引入 QRCode.js 用于生成点歌地址二维码（离线支持） -->
     <script src="libs/qrcode.min.js"></script>
+    <!-- 业务模块化脚本 -->
+    <script src="js/lyric-parser.js"></script>
+    <script src="js/audio-player.js"></script>
+    <script src="js/subtitle-renderer.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html, body { width: 100%; height: 100%; background-color: #000000; color: #fff; font-family: "Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif; overflow: hidden; }
@@ -398,19 +402,12 @@
     let qrCodeObj = null;
     let titleTimer = null;
 
-    let tonePitchShiftNode = null;
-    let toneVideoSource = null;
-    let toneVocalSource = null;
-    let isToneInitialized = false;
-
-    let activeMainRowsCount = -1;
-    let activeHasSubSlot = false;
+    const audioEngine = new DualTrackAudioEngine(video, vocalAudio);
+    const subtitleRenderer = new KaraokeSubtitleRenderer(karaokeDisplay);
 
     function clearKaraokeDisplay() {
         parsedPhrases = [];
-        karaokeDisplay.innerHTML = "";
-        activeMainRowsCount = -1;
-        activeHasSubSlot = false;
+        subtitleRenderer.clear();
     }
 
     const DEFAULT_TITLE_STYLE = {
@@ -604,45 +601,9 @@
     }
     drawParticles();
 
-    async function initToneEngine() {
-        if (isToneInitialized) return;
-        try {
-            if (typeof Tone === 'undefined') {
-                console.warn("Tone.js 库未加载，回退至原生音频流程");
-                return;
-            }
-
-            await Tone.start();
-
-            tonePitchShiftNode = new Tone.PitchShift({
-                pitch: 0,
-                windowSize: 0.08,
-                delayTime: 0,
-                feedback: 0
-            }).toDestination();
-
-            toneVideoSource = Tone.getContext().createMediaElementSource(video);
-            toneVocalSource = Tone.getContext().createMediaElementSource(vocalAudio);
-
-            Tone.connect(toneVideoSource, tonePitchShiftNode);
-            Tone.connect(toneVocalSource, tonePitchShiftNode);
-
-            isToneInitialized = true;
-        } catch (e) {
-            console.error("初始化 Tone.js 引擎失败:", e);
-        }
-    }
-
     function applyPitchShift(pitchVal) {
         currentPitch = pitchVal;
-
-        video.playbackRate = 1.0;
-        vocalAudio.playbackRate = 1.0;
-
-        if (isToneInitialized && tonePitchShiftNode) {
-            tonePitchShiftNode.pitch = pitchVal;
-        }
-
+        audioEngine.setPitch(pitchVal);
         updateHudDisplay();
     }
 
@@ -832,8 +793,8 @@
     socket.on('broadcast-seek', (percent) => {
         if (!isNaN(video.duration) && video.duration > 0) {
             const targetTime = (percent / 100) * video.duration;
-            video.currentTime = targetTime;
-            vocalAudio.currentTime = targetTime;
+            audioEngine.seek(targetTime);
+            subtitleRenderer.renderFrameAtTime(parsedPhrases, targetTime);
         }
     });
 
@@ -842,20 +803,12 @@
     });
 
     function toggleVocal() {
-        isVocalEnabled = !isVocalEnabled;
-        applyAudioMix();
+        isVocalEnabled = audioEngine.toggleVocal();
         updateHudDisplay();
     }
 
     function applyAudioMix() {
-        const masterVol = parseFloat(volumeSlider.value);
-        if (isVocalEnabled) {
-            video.volume = 0;
-            vocalAudio.volume = masterVol;
-        } else {
-            video.volume = masterVol;
-            vocalAudio.volume = 0;
-        }
+        audioEngine.applyAudioMix();
     }
 
     async function playNextInQueue() {
@@ -877,8 +830,7 @@
                     titleOverlay.classList.remove('active');
                     titleOverlay.innerHTML = "";
                 }
-                video.style.display = 'none';
-                vocalAudio.pause();
+                audioEngine.stop();
             }
         } catch (e) {
             console.error("处理播放队列失败:", e);
@@ -888,7 +840,7 @@
 
     async function loadAndPlaySong(filePath) {
         try {
-            await initToneEngine();
+            await audioEngine.init();
 
             if (!fs.existsSync(filePath)) {
                 console.error("找不到文件:", filePath);
@@ -987,201 +939,16 @@
         }
     }
 
-    function parseTag(text, tagName) {
-        if (!text) return '';
-        const cleanText = text.replace(/[\u200B-\u200D\uFEFF\0]/g, '');
-        const reg = new RegExp(`<\\s*${tagName}\\s*>([^<]*)`, 'i');
-        const match = cleanText.match(reg);
-        if (match && match[1]) {
-            return match[1].trim();
-        }
-        return '';
-    }
-
-    function timeCodeToSeconds(tcStr) {
-        const parts = tcStr.split(':');
-        return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10) + (parseInt(parts[2], 10) / 60.0);
-    }
-
-    function parseJoyHackLinearStream(text) {
-        const lines = text.split(/[\r\n]+/);
-        let activeLinesCount = 2;
-
-        let mainColors = {
-            fillBefore: '#FFFFFF', edgeBefore: '#000000', fillAfter: '#FF0033', edgeAfter: '#FFFFFF',
-            rubyFillBefore: '#FFFFFF', rubyEdgeBefore: '#000000', rubyFillAfter: '#FF0033', rubyEdgeAfter: '#FFFFFF'
-        };
-
-        let subColors = {
-            fillBefore: '#FFFFFF', edgeBefore: '#000000', fillAfter: '#FF0033', edgeAfter: '#FFFFFF',
-            rubyFillBefore: '#FFFFFF', rubyEdgeBefore: '#000000', rubyFillAfter: '#FF0033', rubyEdgeAfter: '#FFFFFF'
-        };
-
-        const phrases = [];
-
-        lines.forEach(line => {
-            if (!line.trim() && !line.includes('\t')) return;
-
-            if (line.match(/^<[a-zA-Z0-9_]+>/) && !line.includes('<time>') && !line.includes('<clear>') && !line.includes('<sub>') && !line.includes('<color>')) {
-                return;
-            }
-
-            let isClear = false;
-            if (line.includes('<clear>')) {
-                isClear = true;
-                const matchNum = line.match(/<clear>([1-4])/);
-                if (matchNum) activeLinesCount = parseInt(matchNum[1], 10);
-            }
-
-            let isSub = false;
-            if (line.includes('<sub>')) {
-                isSub = true;
-                line = line.replace(/<\/?sub>/g, '');
-            }
-
-            const timeTagIndex = line.indexOf('<time>');
-            if (timeTagIndex === -1) {
-                return;
-            }
-
-            const textPart = line.substring(0, timeTagIndex);
-            const timePart = line.substring(timeTagIndex);
-
-            const timeRegex = /\b\d{2}:\d{2}:\d{2}\b/g;
-            const timeMatches = timePart.match(timeRegex);
-            if (!timeMatches || timeMatches.length === 0) return;
-
-            const timeCodes = timeMatches.map(timeCodeToSeconds);
-            const showTime = timeCodes[0];
-            const endTime = timeCodes[timeCodes.length - 1];
-
-            const cleanTextPart = textPart.replace(/<clear>[1-4]?/g, '');
-            const rawWords = cleanTextPart.split('\t');
-
-            const wordList = [];
-            for (let i = 0; i < rawWords.length; i++) {
-                let wText = rawWords[i];
-                const wStart = timeCodes[i] !== undefined ? timeCodes[i] : showTime;
-                const wEnd = timeCodes[i + 1] !== undefined ? timeCodes[i + 1] : endTime;
-
-                if (wText.includes('<color>')) {
-                    const colorMatch = wText.match(/<color>([^<\t\r\n]+)/);
-                    if (colorMatch) {
-                        const cArgs = colorMatch[1].split(',');
-                        const targetColorObj = isSub ? subColors : mainColors;
-
-                        if (cArgs[0] && cArgs[0].trim()) targetColorObj.fillBefore = '#' + cArgs[0].trim();
-                        if (cArgs[1] && cArgs[1].trim()) targetColorObj.edgeBefore = '#' + cArgs[1].trim();
-                        if (cArgs[2] && cArgs[2].trim()) targetColorObj.fillAfter = '#' + cArgs[2].trim();
-                        if (cArgs[3] && cArgs[3].trim()) targetColorObj.edgeAfter = '#' + cArgs[3].trim();
-                        if (cArgs[4] && cArgs[4].trim()) targetColorObj.rubyFillBefore = '#' + cArgs[4].trim();
-                        if (cArgs[5] && cArgs[5].trim()) targetColorObj.rubyEdgeBefore = '#' + cArgs[5].trim();
-                        if (cArgs[6] && cArgs[6].trim()) targetColorObj.rubyFillAfter = '#' + cArgs[6].trim();
-                        if (cArgs[7] && cArgs[7].trim()) targetColorObj.rubyEdgeAfter = '#' + cArgs[7].trim();
-
-                        wText = wText.replace(/<color>[^<\t\r\n]+/, '');
-                    }
-                }
-
-                let baseText = wText;
-                let rubyText = null;
-                if (baseText.includes('<ruby>')) {
-                    const rParts = baseText.split('<ruby>');
-                    baseText = rParts[0];
-                    rubyText = rParts[1];
-                }
-
-                wordList.push({
-                    word: baseText,
-                    ruby: rubyText,
-                    isEmpty: (baseText === ''),
-                    start: wStart,
-                    end: wEnd,
-                    color: isSub ? { ...subColors } : { ...mainColors }
-                });
-            }
-
-            const isPureClearCmd = isClear && (cleanTextPart.replace(/[\s\u3000\t]/g, '') === '');
-
-            phrases.push({
-                isClearCmd: isPureClearCmd,
-                isSub: isSub,
-                linesCount: activeLinesCount,
-                showTime: showTime,
-                endTime: endTime,
-                words: wordList
-            });
-        });
-
-        phrases.sort((a, b) => a.showTime - b.showTime);
-
-        // 核心修正 1：在遇到的每一个 <clear> 节点处彻底重置槽位与模式状态，阻断上段残存槽位污染
-        let modeCounter = 0;
-        let currentLinesMode = -1;
-
-        phrases.forEach((p) => {
-            if (p.isClearCmd) {
-                modeCounter = 0;
-                currentLinesMode = -1; // 同时重置 linesMode，确保 clear 后的第一句歌词必定处于 Row 0
-                return;
-            }
-
-            if (!p.isSub) {
-                if (p.linesCount !== currentLinesMode) {
-                    currentLinesMode = p.linesCount;
-                    modeCounter = 0;
-                }
-                p.inModeIndex = modeCounter;
-                modeCounter++;
-            }
-        });
-
-        const pureMainPhrases = phrases.filter(p => !p.isSub && !p.isClearCmd);
-        
-        phrases.forEach(p => {
-            if (p.isSub) {
-                let hostIndex = pureMainPhrases.findIndex(m => p.showTime >= m.showTime && p.showTime <= m.endTime + 1.0);
-                if (hostIndex === -1) {
-                    hostIndex = pureMainPhrases.findIndex(m => m.showTime >= p.showTime);
-                }
-                if (hostIndex === -1 && pureMainPhrases.length > 0) {
-                    hostIndex = pureMainPhrases.length - 1;
-                }
-
-                p.hostMain = hostIndex !== -1 ? pureMainPhrases[hostIndex] : null;
-                p.prevMain = (hostIndex > 0) ? pureMainPhrases[hostIndex - 1] : null;
-            }
-        });
-
-        return phrases;
-    }
-
     function playMedia(mediaPath, vocalPath) {
-        video.style.display = 'block';
-        video.src = `file://${mediaPath.replace(/\\/g, '/')}`;
-
-        if (vocalPath) {
-            vocalAudio.src = `file://${vocalPath.replace(/\\/g, '/')}`;
-        } else {
-            vocalAudio.src = "";
-        }
-
+        audioEngine.loadMedia(mediaPath, vocalPath);
         isVocalEnabled = false;
-        applyAudioMix();
-        applyPitchShift(currentPitch);
 
         songInfo.innerText = `作词: ${currentMetadata.lyrics || 'N/A'} | 作曲: ${currentMetadata.music || 'N/A'} | 出处: ${currentMetadata.works || 'N/A'}`;
 
         playBtn.disabled = false;
         playBtn.innerText = "暂停";
 
-        activeMainRowsCount = -1;
-        activeHasSubSlot = false;
-
-        video.currentTime = 0;
-        if (vocalPath) vocalAudio.currentTime = 0;
-        video.pause();
-        if (vocalPath) vocalAudio.pause();
+        clearKaraokeDisplay();
 
         if (titleTimer) clearTimeout(titleTimer);
 
@@ -1192,10 +959,7 @@
             if (!isPreviewMode) {
                 titleOverlay.classList.remove('active');
             }
-            video.play().catch(err => console.log("等待手动触发播放:", err));
-            if (vocalPath) {
-                vocalAudio.play().catch(err => console.log("原唱轨同步受阻:", err));
-            }
+            audioEngine.play().catch(err => console.log("等待手动触发播放:", err));
             updateHudDisplay();
         }, 3000);
 
@@ -1204,37 +968,22 @@
 
     function setVolume(val) {
         volumeSlider.value = val;
-        applyAudioMix();
+        audioEngine.setVolume(val);
     }
 
     video.onended = async () => {
         hud.innerText = `${currentMetadata.title} [状态: 播放完毕]`;
         clearKaraokeDisplay();
         if (!isPreviewMode) titleOverlay.classList.remove('active');
-        vocalAudio.pause();
+        audioEngine.pause();
         await fetch(`${SERVER_ORIGIN}/api/queue/0`, { method: 'DELETE' });
         isPlayingQueue = false;
         playNextInQueue();
     };
 
-    video.onseeking = () => {
-        if (vocalAudio.src) vocalAudio.currentTime = video.currentTime;
-        renderFrameAtTime(video.currentTime);
-    };
-
-    video.onseeked = () => {
-        if (vocalAudio.src) vocalAudio.currentTime = video.currentTime;
-        renderFrameAtTime(video.currentTime);
-    };
-
     video.ontimeupdate = () => {
         if (!isNaN(video.duration) && video.duration > 0) {
             const cur = video.currentTime;
-            
-            if (vocalAudio.src && Math.abs(vocalAudio.currentTime - cur) > 0.15) {
-                vocalAudio.currentTime = cur;
-            }
-
             progressBar.style.width = `${(cur / video.duration) * 100}%`;
             timeDisplay.innerText = `${formatTime(cur)} / ${formatTime(video.duration)}`;
             socket.emit('sync-progress', { currentTime: cur, duration: video.duration });
@@ -1243,251 +992,9 @@
 
     function animationLoop() {
         if (!video.paused && !video.ended) {
-            renderFrameAtTime(video.currentTime);
+            subtitleRenderer.renderFrameAtTime(parsedPhrases, video.currentTime);
         }
         requestAnimationFrame(animationLoop);
-    }
-
-    function updateLayoutIfNeeded(mainRowsCount, hasSub) {
-        if (activeMainRowsCount === mainRowsCount && activeHasSubSlot === hasSub) {
-            return;
-        }
-
-        activeMainRowsCount = mainRowsCount;
-        activeHasSubSlot = hasSub;
-
-        karaokeDisplay.innerHTML = "";
-
-        for (let i = 0; i < mainRowsCount; i++) {
-            const row = document.createElement('div');
-            let alignClass = 'row-align-left';
-            
-            if (mainRowsCount === 1) {
-                alignClass = 'row-align-center';
-            } else if (mainRowsCount === 2) {
-                alignClass = i % 2 === 0 ? 'row-align-left' : 'row-align-right';
-            } else if (mainRowsCount === 3) {
-                if (i === 0) alignClass = 'row-align-left';
-                else if (i === 1) alignClass = 'row-align-center';
-                else alignClass = 'row-align-right';
-            } else if (mainRowsCount === 4) {
-                alignClass = i % 2 === 0 ? 'row-align-left' : 'row-align-right';
-            }
-
-            row.className = `lyric-row ${alignClass}`;
-            row.id = `lyricRow_${i}`;
-            karaokeDisplay.appendChild(row);
-        }
-
-        if (hasSub) {
-            const subRow = document.createElement('div');
-            subRow.className = `lyric-row row-sub`;
-            subRow.id = `lyricRow_sub`;
-            karaokeDisplay.appendChild(subRow);
-        }
-    }
-
-    function renderFrameAtTime(curTime) {
-        if (parsedPhrases.length === 0) return;
-
-        // 1. 检查当前时刻是否处于某个 <clear> 执行区
-        const activeClearCmd = parsedPhrases.find(p => p.isClearCmd && curTime >= p.showTime && curTime <= p.endTime);
-        if (activeClearCmd) {
-            karaokeDisplay.innerHTML = "";
-            activeMainRowsCount = -1;
-            activeHasSubSlot = false;
-            return;
-        }
-
-        const pureMains = parsedPhrases.filter(p => !p.isSub && !p.isClearCmd);
-        if (pureMains.length === 0) return;
-
-        // 2. 查找当前时间之前触发的最后一个 <clear> 节点
-        const clearCmdsBeforeCur = parsedPhrases.filter(p => p.isClearCmd && curTime >= p.endTime);
-        let lastClearTime = -1;
-        if (clearCmdsBeforeCur.length > 0) {
-            lastClearTime = clearCmdsBeforeCur[clearCmdsBeforeCur.length - 1].endTime;
-        }
-
-        // 3. 根据最近一次 <clear> 分隔离出的块过滤有效歌词
-        let currentBlockMains = [];
-        if (lastClearTime !== -1) {
-            currentBlockMains = pureMains.filter(m => m.showTime >= lastClearTime);
-        } else {
-            currentBlockMains = pureMains;
-        }
-
-        if (currentBlockMains.length === 0) {
-            karaokeDisplay.innerHTML = "";
-            return;
-        }
-
-        // 4. 定位焦点歌词与预渲染歌词
-        let localIdx = -1;
-        let isOpeningPreload = false;
-
-        if (curTime < currentBlockMains[0].showTime) {
-            localIdx = 0;
-            isOpeningPreload = true;
-        } else {
-            for (let i = 0; i < currentBlockMains.length; i++) {
-                if (curTime >= currentBlockMains[i].showTime) {
-                    localIdx = i;
-                } else {
-                    break;
-                }
-            }
-        }
-
-        if (localIdx === -1) return;
-
-        const currentMain = currentBlockMains[localIdx];
-        const nextMain = currentBlockMains[localIdx + 1];
-
-        const maxMainRows = currentMain.linesCount || 2;
-
-        const activeSub = parsedPhrases.find(p => {
-            if (!p.isSub) return false;
-
-            let isTriggered = false;
-            if (p.hostMain) {
-                const delta = p.showTime - p.hostMain.showTime;
-                if (delta <= 1.5) {
-                    if (p.prevMain) {
-                        isTriggered = curTime >= p.prevMain.showTime;
-                    } else {
-                        isTriggered = curTime >= (p.hostMain.showTime - 2.0);
-                    }
-                } else {
-                    isTriggered = curTime >= (p.showTime - 1.5);
-                }
-            } else {
-                isTriggered = curTime >= (p.showTime - 1.5);
-            }
-
-            if (!isTriggered) return false;
-
-            let extendedEndTime = p.endTime;
-            const overlappingMains = pureMains.filter(m => m.showTime <= p.endTime + 2.0 && m.endTime >= p.showTime);
-            if (overlappingMains.length > 0) {
-                const maxMainEndTime = Math.max(...overlappingMains.map(m => m.endTime));
-                extendedEndTime = Math.max(p.endTime, maxMainEndTime);
-            }
-
-            return curTime <= extendedEndTime;
-        });
-
-        updateLayoutIfNeeded(maxMainRows, !!activeSub);
-
-        // 5. 精准槽位映射逻辑（防止预加载与当期槽位互相挤占）
-        const activeRowIdx = maxMainRows > 1 ? (currentMain.inModeIndex % maxMainRows) : 0;
-        
-        let previewRowIdx = -1;
-        if (nextMain && nextMain.linesCount === maxMainRows && !nextMain.isClearCmd) {
-            const targetPreviewRow = nextMain.inModeIndex % maxMainRows;
-            // 只有预加载槽位与当前开唱槽位不冲突时才开启预加载
-            if (targetPreviewRow !== activeRowIdx) {
-                previewRowIdx = targetPreviewRow;
-            }
-        }
-
-        const activeRowElem = document.getElementById(`lyricRow_${activeRowIdx}`);
-        const previewRowElem = previewRowIdx !== -1 ? document.getElementById(`lyricRow_${previewRowIdx}`) : null;
-
-        if (activeRowElem) {
-            activeRowElem.innerHTML = buildLineHtml(currentMain);
-            activeRowElem.style.opacity = isOpeningPreload ? "0.5" : "1";
-
-            currentMain.words.forEach((w, wIdx) => {
-                const wordElem = activeRowElem.querySelector(`[data-widx="${wIdx}"] .karaoke-word-active`);
-                if (wordElem) {
-                    let progress = 0;
-                    if (!isOpeningPreload) {
-                        if (curTime >= w.end) {
-                            progress = 100;
-                        } else if (curTime > w.start) {
-                            progress = ((curTime - w.start) / (w.end - w.start)) * 100;
-                        }
-                    }
-                    wordElem.style.setProperty('--clip', `${progress}%`);
-                }
-            });
-        }
-
-        if (previewRowElem) {
-            if (nextMain && !nextMain.isClearCmd) {
-                previewRowElem.innerHTML = buildLineHtml(nextMain);
-                previewRowElem.style.opacity = "0.5";
-
-                nextMain.words.forEach((w, wIdx) => {
-                    const wordElem = previewRowElem.querySelector(`[data-widx="${wIdx}"] .karaoke-word-active`);
-                    if (wordElem) {
-                        wordElem.style.setProperty('--clip', `0%`);
-                    }
-                });
-            } else {
-                previewRowElem.innerHTML = "";
-            }
-        }
-
-        if (activeSub) {
-            const subElem = document.getElementById(`lyricRow_sub`);
-            if (subElem) {
-                subElem.innerHTML = buildLineHtml(activeSub);
-                subElem.style.opacity = (curTime >= activeSub.showTime) ? "1" : "0.5";
-
-                activeSub.words.forEach((w, wIdx) => {
-                    const wordElem = subElem.querySelector(`[data-widx="${wIdx}"] .karaoke-word-active`);
-                    if (wordElem) {
-                        let progress = 0;
-                        if (curTime >= w.end) {
-                            progress = 100;
-                        } else if (curTime > w.start) {
-                            progress = ((curTime - w.start) / (w.end - w.start)) * 100;
-                        }
-                        wordElem.style.setProperty('--clip', `${progress}%`);
-                    }
-                });
-            }
-        }
-    }
-
-    function getSmoothShadow(color) {
-        return `-1.5px -1.5px 0 ${color}, 1.5px -1.5px 0 ${color}, -1.5px 1.5px 0 ${color}, 1.5px 1.5px 0 ${color}, -2px 0 0 ${color}, 2px 0 0 ${color}, 0 -2px 0 ${color}, 0 2px 0 ${color}, -1px -2px 0 ${color}, 1px -2px 0 ${color}, -1px 2px 0 ${color}, 1px 2px 0 ${color}`;
-    }
-
-    function buildLineHtml(lineData) {
-        return lineData.words.map((w, idx) => {
-            if (w.isEmpty) {
-                return '';
-            }
-
-            let displayText = w.word;
-            let rubyText = w.ruby;
-
-            const c = w.color || {
-                fillBefore: '#FFFFFF', edgeBefore: '#000000',
-                fillAfter: '#FF0033', edgeAfter: '#FFFFFF',
-                rubyFillBefore: '#FFFFFF', rubyEdgeBefore: '#000000',
-                rubyFillAfter: '#FF0033', rubyEdgeAfter: '#FFFFFF'
-            };
-
-            const baseShadow = getSmoothShadow(c.edgeBefore) + ', 0 4px 12px rgba(0,0,0,0.85)';
-            const activeShadow = getSmoothShadow(c.edgeAfter) + ', 0 0 16px ' + c.fillAfter + ', 0 4px 8px rgba(0,0,0,0.9)';
-            
-            const rubyBaseShadow = getSmoothShadow(c.rubyEdgeBefore) + ', 0 0 6px #000';
-            const rubyActiveShadow = getSmoothShadow(c.rubyEdgeAfter) + ', 0 0 8px ' + c.rubyFillAfter;
-
-            let baseInner = displayText;
-            let activeInner = displayText;
-
-            if (rubyText) {
-                baseInner = `<ruby>${displayText}<rt style="color:${c.rubyFillBefore}; text-shadow:${rubyBaseShadow};">${rubyText}</rt></ruby>`;
-                activeInner = `<ruby>${displayText}<rt style="color:${c.rubyFillAfter}; text-shadow:${rubyActiveShadow};">${rubyText}</rt></ruby>`;
-            }
-
-            return `<div class="karaoke-word-wrapper" data-widx="${idx}"><div class="karaoke-word-base" style="color:${c.fillBefore}; text-shadow:${baseShadow};">${baseInner}</div><div class="karaoke-word-active" style="color:${c.fillAfter}; text-shadow:${activeShadow};">${activeInner}</div></div>`;
-        }).join("");
     }
 
     function togglePlay() {
@@ -1498,25 +1005,20 @@
                 titleTimer = null;
                 if (!isPreviewMode) titleOverlay.classList.remove('active');
             }
-            video.play();
-            if (vocalAudio.src) vocalAudio.play();
+            audioEngine.play();
             playBtn.innerText = "暂停";
             updateHudDisplay();
         } else {
-            video.pause();
-            if (vocalAudio.src) vocalAudio.pause();
-            playBtn.innerText = "暂停";
+            audioEngine.pause();
+            playBtn.innerText = "播放";
             hud.innerText = `${currentMetadata.title} [状态: 已暂停]`;
         }
     }
 
     function restartSong() {
         if (titleTimer) clearTimeout(titleTimer);
-
-        video.currentTime = 0;
-        if (vocalAudio.src) vocalAudio.currentTime = 0;
-        video.pause();
-        if (vocalAudio.src) vocalAudio.pause();
+        audioEngine.seek(0);
+        audioEngine.pause();
 
         playBtn.disabled = false;
         playBtn.innerText = "暂停";
@@ -1528,10 +1030,7 @@
             if (!isPreviewMode) {
                 titleOverlay.classList.remove('active');
             }
-            video.play().catch(err => console.log("重新播放受阻:", err));
-            if (vocalAudio.src) {
-                vocalAudio.play().catch(err => console.log("原唱轨同步受阻:", err));
-            }
+            audioEngine.play().catch(err => console.log("重新播放受阻:", err));
             updateHudDisplay();
         }, 3000);
     }
@@ -1547,13 +1046,12 @@
             }
 
             const t = pos * video.duration;
-            video.currentTime = t;
-            if (vocalAudio.src) vocalAudio.currentTime = t;
+            audioEngine.seek(t);
+            subtitleRenderer.renderFrameAtTime(parsedPhrases, t);
             if (video.ended) { 
                 playBtn.disabled = false; 
                 playBtn.innerText = "暂停"; 
-                video.play(); 
-                if (vocalAudio.src) vocalAudio.play();
+                audioEngine.play();
             }
         }
     }
