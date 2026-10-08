@@ -100,6 +100,17 @@ function getSongsDir() {
     if (customSongsDir && fs.existsSync(customSongsDir)) {
         return customSongsDir;
     }
+    try {
+        const rootConfig = path.join(__dirname, 'config.json');
+        if (fs.existsSync(rootConfig)) {
+            const data = JSON.parse(fs.readFileSync(rootConfig, 'utf8'));
+            const customDir = data.songsDir || data.songsDirectory;
+            if (customDir && fs.existsSync(customDir)) {
+                return customDir;
+            }
+        }
+    } catch (e) {}
+
     const defaultPath = path.join(__dirname, 'Songs');
     if (fs.existsSync(defaultPath)) return defaultPath;
     

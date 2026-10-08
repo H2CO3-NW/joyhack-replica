@@ -739,13 +739,39 @@
     });
 
     function decodeJapaneseBuffer(buffer) {
-        let str = iconv.decode(buffer, 'cp932');
-        if (str.includes('\uFFFD')) { 
-            let strShiftJis = iconv.decode(buffer, 'Shift_JIS');
-            if (!strShiftJis.includes('\uFFFD')) return strShiftJis;
-            return iconv.decode(buffer, 'utf-8');
+        if (!buffer || buffer.length === 0) return '';
+
+        // 1. 嗅探 UTF-16LE BOM (Windows 记事本 Unicode)
+        if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xFE) {
+            return iconv.decode(buffer, 'utf16le');
         }
-        return str;
+        // 2. 嗅探 UTF-16BE BOM
+        if (buffer.length >= 2 && buffer[0] === 0xFE && buffer[1] === 0xFF) {
+            return iconv.decode(buffer, 'utf16be');
+        }
+        // 3. 嗅探 UTF-8 BOM
+        if (buffer.length >= 3 && buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
+            return iconv.decode(buffer, 'utf8');
+        }
+
+        // 4. 字节流探测：如果前 100 字节内发现空字节，极大概率是无 BOM 的 UTF-16LE
+        let hasNull = false;
+        for (let i = 0; i < Math.min(buffer.length, 100); i++) {
+            if (buffer[i] === 0x00) {
+                hasNull = true;
+                break;
+            }
+        }
+        if (hasNull) return iconv.decode(buffer, 'utf16le');
+
+        // 5. 尝试严格模式的 UTF-8 解码
+        let strUtf8 = iconv.decode(buffer, 'utf8');
+        if (!strUtf8.includes('\uFFFD')) {
+            return strUtf8;
+        }
+
+        // 6. 终极回退方案：CP932 / Shift_JIS (日文系统标准格式)
+        return iconv.decode(buffer, 'cp932');
     }
 
     ipcRenderer.on('OPEN_KAROKE_FILE', (event, filePath) => {
@@ -769,6 +795,13 @@
             if (titleTimer) clearTimeout(titleTimer);
             clearKaraokeDisplay();
             await fetch(`${SERVER_ORIGIN}/api/queue/0`, { method: 'DELETE' });
+            isPlayingQueue = false;
+            playNextInQueue();
+        } else if (cmd === 'PLAY_NOW') {
+            video.pause();
+            vocalAudio.pause();
+            if (titleTimer) clearTimeout(titleTimer);
+            clearKaraokeDisplay();
             isPlayingQueue = false;
             playNextInQueue();
         } else if (cmd === 'TOGGLE_VOCAL') {
@@ -955,9 +988,14 @@
     }
 
     function parseTag(text, tagName) {
-        const reg = new RegExp(`<${tagName}>([^<]+)`, 'i');
-        const match = text.match(reg);
-        return match ? match[1].trim() : null;
+        if (!text) return '';
+        const cleanText = text.replace(/[\u200B-\u200D\uFEFF\0]/g, '');
+        const reg = new RegExp(`<\\s*${tagName}\\s*>([^<]*)`, 'i');
+        const match = cleanText.match(reg);
+        if (match && match[1]) {
+            return match[1].trim();
+        }
+        return '';
     }
 
     function timeCodeToSeconds(tcStr) {
