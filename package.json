@@ -1,10 +1,11 @@
 {
   "name": "joyhack-replica",
-  "version": "1.0.0",
+  "version": "0.8.5",
   "description": "JoyHack Karaoke Player Engine and Web Server",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "build": "electron-builder --win --x64",
     "dist": "electron-builder",
     "pack": "electron-builder --dir"
   },
@@ -41,12 +42,6 @@
         "nsis",
         "portable"
       ]
-    },
-    "mac": {
-      "target": [
-        "dmg"
-      ],
-      "category": "public.app-category.entertainment"
     },
     "nsis": {
       "oneClick": false,
