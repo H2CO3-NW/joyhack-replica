@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
@@ -6,50 +6,122 @@
     <title>Untitled.txt - RecENT (JoyHack)</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { 
-            background-color: #f0f0f0; color: #000; 
+        html, body { 
+            width: 100%; height: 100%;
+            background-color: #ece9d8; color: #000; 
             font-family: "MS UI Gothic", "Meiryo", "Microsoft YaHei", sans-serif; 
-            display: flex; flex-direction: column; height: 100vh; overflow: hidden; font-size: 12px;
+            display: flex; flex-direction: column; overflow: hidden; font-size: 12px;
             user-select: none;
         }
 
+        /* 顶部元数据录入区：与原版 RecENT 布局 100% 对齐 */
         .top-panel { 
-            background: #ece9d8; border-bottom: 2px solid #d4d0c8; padding: 8px 10px; 
-            display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: center; flex-shrink: 0;
+            background: #ece9d8; border-bottom: 2px solid #d4d0c8; padding: 6px 10px; 
+            display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px 12px; align-items: center; flex-shrink: 0;
         }
-        .meta-grid { display: grid; grid-template-columns: 65px 1fr; gap: 4px 8px; align-items: center; }
-        .meta-grid label { text-align: right; color: #222; }
-        .meta-input { width: 100%; background: #fff; border: 1px solid #7f9db9; padding: 2px 4px; font-size: 12px; height: 20px; }
-        .meta-input:focus { border-color: #316ac5; outline: none; }
-        .btn-sm { background: #ece9d8; border: 1px solid #7f9db9; padding: 1px 6px; font-size: 11px; cursor: pointer; }
-        .btn-sm:active { background: #d4d0c8; }
+        .meta-col { display: flex; flex-direction: column; gap: 4px; }
+        .meta-row { display: flex; align-items: center; gap: 6px; }
+        .meta-label { width: 52px; text-align: right; color: #111; flex-shrink: 0; font-size: 11px; }
+        .meta-input { 
+            flex: 1; background: #fff; border: 1px solid #7f9db9; padding: 2px 4px; 
+            font-size: 12px; height: 21px; outline: none; 
+        }
+        .meta-input:focus { border-color: #316ac5; }
+        .btn-browse { 
+            background: #ece9d8; border: 1px solid #7f9db9; padding: 1px 8px; 
+            font-size: 11px; height: 21px; cursor: pointer; flex-shrink: 0; 
+        }
+        .btn-browse:hover { background: #f5f4ea; }
+        .btn-browse:active { background: #d4d0c8; }
+
+        /* 计时器与再生速度控制 */
+        .timer-panel {
+            display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+        }
+        .speed-box {
+            display: flex; align-items: center; gap: 4px; font-size: 11px;
+        }
+        .speed-slider { width: 65px; accent-color: #316ac5; cursor: pointer; }
+        .btn-tool {
+            background: #ece9d8; border: 1px solid #7f9db9; padding: 1px 6px; font-size: 11px; height: 20px; cursor: pointer;
+        }
+        .btn-tool:hover { background: #f5f4ea; }
+        .btn-tool:active { background: #d4d0c8; }
 
         .timer-display-box { 
-            background: #000; border: inset 2px #7f9db9; padding: 4px 12px; 
-            display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 130px;
+            background: #000; border: inset 2px #7f9db9; padding: 4px 10px; 
+            display: flex; align-items: center; justify-content: center; min-width: 140px; height: 38px;
         }
-        .timer-digits { font-family: "Consolas", "Courier New", monospace; font-size: 24px; font-weight: bold; color: #00ffff; letter-spacing: 1px; }
+        .timer-digits { 
+            font-family: "Consolas", "Courier New", monospace; font-size: 24px; font-weight: bold; 
+            color: #00ffff; letter-spacing: 1px; line-height: 1;
+        }
 
-        .grid-container { flex: 1; background: #fff; border: inset 2px #7f9db9; margin: 6px 8px; overflow-y: auto; position: relative; }
+        /* 核心歌词打轴表格容器 */
+        .grid-container { 
+            flex: 1; background: #fff; border: inset 2px #7f9db9; margin: 4px 6px; 
+            overflow-y: scroll; position: relative; outline: none;
+        }
         table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        th { background: #ece9d8; border-right: 1px solid #d4d0c8; border-bottom: 1px solid #d4d0c8; padding: 4px; font-weight: normal; text-align: left; position: sticky; top: 0; z-index: 10; }
-        td { border-right: 1px solid #e0e0e0; border-bottom: 1px solid #e0e0e0; padding: 3px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        tr.selected { background: #316ac5 !important; color: #fff; }
-        tr:nth-child(even):not(.selected) { background: #f9f9f9; }
-        
-        .col-time { width: 100px; font-family: monospace; text-align: center; }
-        .col-lyric { width: auto; }
-        .col-ruby { width: 120px; }
+        thead th { 
+            background: #ece9d8; border-right: 1px solid #d4d0c8; border-bottom: 1px solid #d4d0c8; 
+            padding: 3px 4px; font-weight: normal; text-align: left; position: sticky; top: 0; z-index: 10; font-size: 11px;
+        }
+        tbody td { 
+            border-right: 1px solid #e8e8e8; border-bottom: 1px solid #e8e8e8; 
+            padding: 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 20px;
+            font-size: 12px;
+        }
+        .col-time { width: 110px; font-family: "Consolas", monospace; text-align: center; }
+        .col-lyric { width: auto; font-family: "Meiryo", "MS UI Gothic", sans-serif; }
+        .col-ruby { width: 130px; font-family: "Meiryo", sans-serif; }
 
-        .bottom-bar { background: #ece9d8; border-top: 1px solid #d4d0c8; padding: 6px 10px; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-        .ctrl-btn { background: #ece9d8; border: 1px solid #7f9db9; width: 26px; height: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 11px; }
-        .ctrl-btn:hover { background: #e0dfd5; }
+        tbody tr.selected { 
+            background-color: #0078d7 !important; color: #fff !important; 
+        }
+        tbody tr.selected td { 
+            border-right-color: #005a9e; border-bottom-color: #005a9e; color: #fff !important; 
+        }
+        tbody td.col-time {
+            cursor: pointer;
+            user-select: none;
+        }
+        tbody td.editable-cell {
+            cursor: text;
+            user-select: text;
+            outline: none;
+            white-space: pre-wrap;
+        }
+        tbody tr.selected td.editable-cell:focus {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            box-shadow: inset 0 0 0 2px #000;
+        }
+        tbody tr:not(.selected) td.editable-cell:focus {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            box-shadow: inset 0 0 0 2px #0078d7;
+        }
+        tbody tr:nth-child(even):not(.selected) { background-color: #f7f9fc; }
+        tbody tr.is-clear:not(.selected) { color: #0000cc; font-weight: bold; }
+        tbody tr.is-slash:not(.selected) { color: #888; }
+
+        /* 底部媒体播放条与操作按钮 */
+        .bottom-bar { 
+            background: #ece9d8; border-top: 1px solid #d4d0c8; padding: 4px 8px; 
+            display: flex; align-items: center; gap: 6px; flex-shrink: 0; 
+        }
+        .ctrl-btn { 
+            background: #ece9d8; border: 1px solid #7f9db9; min-width: 26px; height: 24px; 
+            padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; 
+            cursor: pointer; font-size: 11px; font-weight: bold;
+        }
+        .ctrl-btn:hover { background: #f5f4ea; }
         .ctrl-btn:active { background: #d4d0c8; }
-        .slider-progress { flex: 1; accent-color: #316ac5; }
+        .slider-progress { flex: 1; accent-color: #316ac5; cursor: pointer; height: 18px; }
+        .media-time-info { font-family: monospace; font-size: 11px; color: #333; margin-left: 4px; }
 
-        .speed-control { display: flex; align-items: center; gap: 4px; font-size: 11px; margin-right: 6px; }
-        .speed-slider { width: 60px; accent-color: #316ac5; }
-
+        /* 弹窗样式 */
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.4); z-index: 1000; display: none;
@@ -57,64 +129,93 @@
         }
         .modal-overlay.show { display: flex; }
         .modal-card {
-            background: #ece9d8; border: 2px outset #fff; padding: 15px; width: 350px;
-            box-shadow: 4px 4px 10px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 12px; font-size: 12px;
+            background: #ece9d8; border: 2px outset #fff; padding: 12px; width: 420px;
+            box-shadow: 4px 4px 12px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 10px; font-size: 12px;
         }
-        .modal-header { font-weight: bold; border-bottom: 1px solid #d4d0c8; padding-bottom: 5px; }
-        .modal-footer { display: flex; justify-content: flex-end; gap: 6px; margin-top: 5px; }
-        
-        #audioFileInput { display: none; }
+        .modal-header { font-weight: bold; border-bottom: 1px solid #d4d0c8; padding-bottom: 4px; }
+        .modal-footer { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+        textarea.bulk-textarea {
+            width: 100%; height: 220px; font-family: monospace; font-size: 12px; padding: 6px;
+            border: 1px solid #7f9db9; background: #fff; resize: vertical; outline: none;
+        }
     </style>
 </head>
 <body>
 
-    <input type="file" id="audioFileInput" accept="audio/*,video/*" onchange="loadAudioFile(this)">
-
+    <!-- 顶部元数据面板 -->
     <div class="top-panel">
-        <div class="meta-grid">
-            <label id="lblTitle">曲名</label>
-            <input type="text" class="meta-input" id="metaTitle" oninput="markDirty(); updateHeaderTitle();">
-            <label id="lblKana">カナ読み</label>
-            <input type="text" class="meta-input" id="metaKana" oninput="markDirty()">
-            <label id="lblSinger">歌手名</label>
-            <input type="text" class="meta-input" id="metaSinger" oninput="markDirty()">
-            <label id="lblWorks">作品名</label>
-            <input type="text" class="meta-input" id="metaWorks" oninput="markDirty()">
-            <label id="lblLyrics">作詞</label>
-            <input type="text" class="meta-input" id="metaLyrics" oninput="markDirty()">
-            <label id="lblMusic">作曲</label>
-            <input type="text" class="meta-input" id="metaMusic" oninput="markDirty()">
-        </div>
-        <div class="meta-grid">
-            <label id="lblAuthor">作成者</label>
-            <input type="text" class="meta-input" id="metaAuthor" oninput="markDirty()">
-            <label id="lblYear">発表年</label>
-            <input type="text" class="meta-input" id="metaYear" oninput="markDirty()">
-            <label id="lblMedia">メディア</label>
-            <div style="display: flex; gap: 4px;">
-                <input type="text" class="meta-input" id="metaSource" readonly>
-                <button class="btn-sm" id="btnBrowse" onclick="document.getElementById('audioFileInput').click()">参照</button>
+        <!-- 左列 -->
+        <div class="meta-col">
+            <div class="meta-row">
+                <span class="meta-label">曲名</span>
+                <input type="text" class="meta-input" id="metaTitle" oninput="markDirty(); updateHeaderTitle();">
             </div>
-            <label id="lblExtra">タイトル</label>
-            <div style="display: flex; gap: 4px;">
+            <div class="meta-row">
+                <span class="meta-label">カナ読み</span>
+                <input type="text" class="meta-input" id="metaKana" oninput="markDirty()">
+            </div>
+            <div class="meta-row">
+                <span class="meta-label">歌手名</span>
+                <input type="text" class="meta-input" id="metaSinger" oninput="markDirty()">
+            </div>
+            <div class="meta-row">
+                <span class="meta-label">作品名</span>
+                <input type="text" class="meta-input" id="metaWorks" oninput="markDirty()">
+            </div>
+            <div class="meta-row">
+                <span class="meta-label">作詞</span>
+                <input type="text" class="meta-input" id="metaLyrics" style="width: 100px;" oninput="markDirty()">
+                <span class="meta-label" style="width: 32px;">作曲</span>
+                <input type="text" class="meta-input" id="metaMusic" oninput="markDirty()">
+            </div>
+        </div>
+
+        <!-- 右列 -->
+        <div class="meta-col">
+            <div class="meta-row">
+                <span class="meta-label">作成者</span>
+                <input type="text" class="meta-input" id="metaAuthor" oninput="markDirty()">
+                <span class="meta-label" style="width: 45px;">発表年</span>
+                <input type="text" class="meta-input" id="metaYear" style="width: 55px;" oninput="markDirty()">
+            </div>
+            <div class="meta-row">
+                <span class="meta-label">メディア</span>
+                <input type="text" class="meta-input" id="metaSource" oninput="markDirty()">
+                <button class="btn-browse" onclick="browseMediaFile()">参照</button>
+            </div>
+            <div class="meta-row">
+                <span class="meta-label">タイトル</span>
                 <input type="text" class="meta-input" id="metaExtraTitle" oninput="markDirty()">
-                <button class="btn-sm">参照</button>
+                <button class="btn-browse" onclick="browseTitleImageFile()">参照</button>
             </div>
-            <label id="lblFix">補正</label>
-            <input type="text" class="meta-input" id="metaFix" value="+00:00:00" style="font-family: monospace;" oninput="markDirty()">
+            <div class="meta-row">
+                <span class="meta-label">補正</span>
+                <input type="text" class="meta-input" id="metaFix" value="-00:00:00" style="font-family: monospace;" oninput="markDirty()">
+            </div>
         </div>
-        <div class="timer-display-box">
-            <div class="timer-digits" id="timerDigits">00:00:00</div>
+
+        <!-- 右侧计数器与再生速度 -->
+        <div class="timer-panel">
+            <div class="speed-box">
+                <span>再生速度</span>
+                <input type="range" class="speed-slider" id="speedSlider" min="0.5" max="2.0" step="0.1" value="1.0" oninput="changeSpeed(this.value)">
+                <span id="speedVal" style="font-family: monospace; width: 26px;">1.0x</span>
+                <button class="btn-tool" onclick="openBulkInputModal()">ツール ▼</button>
+            </div>
+            <div class="timer-display-box">
+                <div class="timer-digits" id="timerDigits">00:00:00</div>
+            </div>
         </div>
     </div>
 
-    <div class="grid-container">
+    <!-- 歌词打轴表格容器 -->
+    <div class="grid-container" id="gridContainer" tabindex="0">
         <table id="lyricTable">
             <thead>
                 <tr>
-                    <th class="col-time" id="thTime">タイムコード</th>
-                    <th class="col-lyric" id="thLyric">歌詞</th>
-                    <th class="col-ruby" id="thRuby">ルビ</th>
+                    <th class="col-time">タイムコード</th>
+                    <th class="col-lyric">歌詞</th>
+                    <th class="col-ruby">ルビ</th>
                 </tr>
             </thead>
             <tbody id="gridBody">
@@ -122,35 +223,32 @@
         </table>
     </div>
 
+    <!-- 底部控制条 -->
     <div class="bottom-bar">
-        <button class="ctrl-btn" onclick="audio.currentTime=0">⏮</button>
-        <button class="ctrl-btn" id="playPauseBtn" onclick="togglePlay()">▶</button>
-        <button class="ctrl-btn" onclick="stopAudio()">⏹</button>
-        <button class="ctrl-btn" id="btnStamp" onclick="insertCurrentTimestamp()">⏱ 打点</button>
+        <button class="ctrl-btn" onclick="seekAudio(0)" title="最初に戻る (Home)">|&lt;</button>
+        <button class="ctrl-btn" id="playPauseBtn" onclick="togglePlay()" title="再生 / 一時停止 (Space)">▶</button>
+        <button class="ctrl-btn" onclick="stopAudio()" title="停止">■</button>
+        <button class="ctrl-btn" onclick="stepFrame(-1)" title="1フレーム戻る (←)">-1F</button>
+        <button class="ctrl-btn" onclick="stepFrame(1)" title="1フレーム進む (→)">+1F</button>
+        <button class="ctrl-btn" id="btnStamp" onclick="recordStampAndAdvance()" style="padding: 0 8px; color: #000088;" title="打点推進 (Enter)">打点 [Enter]</button>
 
-        <div class="speed-control">
-            <span id="lblSpeed">再生速度:</span>
-            <input type="range" class="speed-slider" id="speedSlider" min="0.5" max="2.0" step="0.1" value="1.0" oninput="changeSpeed(this.value)">
-            <span id="speedVal" style="font-family: monospace; width: 30px;">1.0x</span>
-        </div>
-
-        <input type="range" class="slider-progress" id="progressSlider" value="0" max="100" step="0.01" oninput="seekAudio(this.value)">
+        <input type="range" class="slider-progress" id="progressSlider" value="0" max="100" step="0.01" oninput="seekAudioByPercent(this.value)">
+        <span class="media-time-info" id="mediaTimeInfo">00:00:00 / 00:00:00</span>
         <audio id="mainAudio" preservespitch></audio>
     </div>
 
-    <div class="modal-overlay" id="settingsModal">
+    <!-- 歌词一括入力弹窗 -->
+    <div class="modal-overlay" id="bulkInputModal">
         <div class="modal-card">
-            <div class="modal-header" id="stModalTitle">プリファレンス / 設定</div>
-            <div>
-                <label id="stLangLabel" style="display: block; margin-bottom: 5px;">表示言語 (Display Language):</label>
-                <select id="langSelect" class="meta-input" style="height: 24px;">
-                    <option value="ja">日本語 (Japanese)</option>
-                    <option value="zh">中文 (Chinese)</option>
-                </select>
+            <div class="modal-header">歌詞テキストの一括入力 / 挿入 (方案B: 按行/词分行)</div>
+            <div style="font-size: 11px; color: #444;">
+                直接粘贴整首纯歌词。每一行将被作为一个句/词块，行尾自动补充换行符「/」。打轴时可通过 Enter 顺次打点推进。
             </div>
+            <textarea class="bulk-textarea" id="bulkLyricText" placeholder="ここに歌詞を貼り付けてください..."></textarea>
             <div class="modal-footer">
-                <button class="btn-sm" onclick="saveSettings()" id="stBtnSave">保存</button>
-                <button class="btn-sm" onclick="closeSettings()" id="stBtnCancel">キャンセル</button>
+                <button class="btn-tool" onclick="applyBulkInput(false)">追加挿入</button>
+                <button class="btn-tool" onclick="applyBulkInput(true)">全置換</button>
+                <button class="btn-tool" onclick="closeBulkInputModal()">閉じる</button>
             </div>
         </div>
     </div>
@@ -163,42 +261,29 @@
 
     const audio = document.getElementById('mainAudio');
     const gridBody = document.getElementById('gridBody');
+    const gridContainer = document.getElementById('gridContainer');
     const timerDigits = document.getElementById('timerDigits');
     const progressSlider = document.getElementById('progressSlider');
+    const mediaTimeInfo = document.getElementById('mediaTimeInfo');
     const speedSlider = document.getElementById('speedSlider');
     const speedVal = document.getElementById('speedVal');
-    
-    let tableData = [];
-    let selectedIndex = 0;
-    let currentFilePath = ""; 
-    let currentFileName = "";
+
+    let currentFilePath = "";
+    let currentFileName = "Untitled.txt";
     let isDirty = false;
-    let currentLang = localStorage.getItem('editor_lang') || 'ja';
+    let selectedIndex = 0;
+
+    // 经典 RecENT 数据结构行
+    let tableData = [
+        { time: "00:00:00", lyric: "<clear>", ruby: "" },
+        { time: "", lyric: "/", ruby: "" }
+    ];
 
     let rawHeaderMeta = {
-        version: "2.1.0",
-        render: "",
-        searchKey: "",
-        titleimage: ""
-    };
-
-    const i18n = {
-        ja: {
-            lblTitle: "曲名", lblKana: "カナ読み", lblSinger: "歌手名", lblWorks: "作品名",
-            lblLyrics: "作詞", lblMusic: "作曲", lblAuthor: "作成者", lblYear: "発表年",
-            lblMedia: "メディア", lblExtra: "タイトル", lblFix: "補正", btnBrowse: "参照",
-            thTime: "タイムコード", thLyric: "歌詞", thRuby: "ルビ", btnStamp: "打点", lblSpeed: "再生速度:",
-            stModalTitle: "プリファレンス / 設定", stLangLabel: "表示言語 (Display Language):",
-            stBtnSave: "保存", stBtnCancel: "キャンセル", confirmNew: "現在の編集内容を破棄して新規作成しますか？"
-        },
-        zh: {
-            lblTitle: "曲名", lblKana: "假名读音", lblSinger: "歌手", lblWorks: "作品出处",
-            lblLyrics: "作词", lblMusic: "作曲", lblAuthor: "制作者", lblYear: "发行年",
-            lblMedia: "媒体文件", lblExtra: "附加标题", lblFix: "时间补正", btnBrowse: "浏览",
-            thTime: "时间码", thLyric: "歌词文本", thRuby: "注音(Ruby)", btnStamp: "打点", lblSpeed: "播放速度:",
-            stModalTitle: "首选项 / 设置", stLangLabel: "界面显示语言 (Display Language):",
-            stBtnSave: "保存", stBtnCancel: "取消", confirmNew: "是否放弃当前修改并新建文件？"
-        }
+        version: '2.1.0',
+        render: '',
+        searchKey: '',
+        titleimage: ''
     };
 
     function markDirty() {
@@ -206,69 +291,294 @@
         updateHeaderTitle();
     }
 
-    function applyLanguage(lang) {
-        currentLang = lang;
-        localStorage.setItem('editor_lang', lang);
-        const t = i18n[lang];
-        document.getElementById('lblTitle').innerText = t.lblTitle;
-        document.getElementById('lblKana').innerText = t.lblKana;
-        document.getElementById('lblSinger').innerText = t.lblSinger;
-        document.getElementById('lblWorks').innerText = t.lblWorks;
-        document.getElementById('lblLyrics').innerText = t.lblLyrics;
-        document.getElementById('lblMusic').innerText = t.lblMusic;
-        document.getElementById('lblAuthor').innerText = t.lblAuthor;
-        document.getElementById('lblYear').innerText = t.lblYear;
-        document.getElementById('lblMedia').innerText = t.lblMedia;
-        document.getElementById('lblExtra').innerText = t.lblExtra;
-        document.getElementById('lblFix').innerText = t.lblFix;
-        document.getElementById('btnBrowse').innerText = t.btnBrowse;
-        document.getElementById('thTime').innerText = t.thTime;
-        document.getElementById('thLyric').innerText = t.thLyric;
-        document.getElementById('thRuby').innerText = t.thRuby;
-        document.getElementById('btnStamp').innerText = t.btnStamp;
-        document.getElementById('lblSpeed').innerText = t.lblSpeed;
-        document.getElementById('stModalTitle').innerText = t.stModalTitle;
-        document.getElementById('stLangLabel').innerText = t.stLangLabel;
-        document.getElementById('stBtnSave').innerText = t.stBtnSave;
-        document.getElementById('stBtnCancel').innerText = t.stBtnCancel;
-        document.getElementById('langSelect').value = lang;
+    let lastActiveEditable = null;
+    let lastSavedRange = null;
+
+    document.addEventListener('selectionchange', () => {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) {
+            const anchor = sel.anchorNode;
+            const cell = anchor ? (anchor.nodeType === 1 ? anchor : anchor.parentElement).closest('.editable-cell') : null;
+            if (cell) {
+                lastActiveEditable = cell;
+                lastSavedRange = sel.getRangeAt(0).cloneRange();
+            }
+        }
+    });
+
+    function insertTagAtCursor(tagText) {
+        if (lastActiveEditable && lastSavedRange) {
+            lastActiveEditable.focus();
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(lastSavedRange);
+
+            document.execCommand('insertText', false, tagText);
+            lastActiveEditable.dispatchEvent(new Event('blur'));
+            markDirty();
+        } else if (tableData[selectedIndex]) {
+            tableData[selectedIndex].lyric += tagText;
+            markDirty();
+            renderTable(true);
+        }
     }
 
-    function openSettings() {
-        document.getElementById('settingsModal').classList.add('show');
+    function updateHeaderTitle() {
+        const t = document.getElementById('metaTitle').value;
+        const baseName = currentFileName || (t ? `${t}.txt` : 'Untitled.txt');
+        document.title = `${baseName}${isDirty ? ' *' : ''} - RecENT (JoyHack)`;
     }
 
-    function closeSettings() {
-        document.getElementById('settingsModal').classList.remove('show');
+    /**
+     * JoyHack 60fps 帧时间戳转换体系 (mm:ss:ff)
+     */
+    function secondsToTimeCode(sec) {
+        if (isNaN(sec) || sec < 0) sec = 0;
+        const m = Math.floor(sec / 60).toString().padStart(2, '0');
+        const s = Math.floor(sec % 60).toString().padStart(2, '0');
+        const ff = Math.floor((sec % 1) * 60).toString().padStart(2, '0');
+        return `${m}:${s}:${ff}`;
     }
 
-    function saveSettings() {
-        const lang = document.getElementById('langSelect').value;
-        applyLanguage(lang);
-        closeSettings();
+    function timeCodeToSeconds(tcStr) {
+        if (!tcStr) return 0;
+        const parts = tcStr.trim().split(':');
+        if (parts.length < 3) return 0;
+        const m = parseInt(parts[0], 10) || 0;
+        const s = parseInt(parts[1], 10) || 0;
+        const ff = parseInt(parts[2], 10) || 0;
+        return m * 60 + s + (ff / 60.0);
     }
 
-    function renderTable() {
+    /**
+     * 表格渲染与联动
+     */
+    function renderTable(scrollIntoView = false, focusTarget = null) {
         gridBody.innerHTML = "";
         tableData.forEach((row, index) => {
             const tr = document.createElement('tr');
             if (index === selectedIndex) tr.className = 'selected';
-            
-            tr.onclick = () => {
-                selectedIndex = index;
-                renderTable();
-                if (row.time && row.time !== "") {
-                    jumpAudioToTime(row.time);
+            if (row.lyric === '<clear>' || row.lyric.startsWith('<clear')) tr.classList.add('is-clear');
+            if (row.lyric === '/') tr.classList.add('is-slash');
+
+            // タイムコード单元格：单击脱离编辑模式，选中整行，重回打点模式
+            const tdTime = document.createElement('td');
+            tdTime.className = 'col-time';
+            tdTime.innerText = row.time || '';
+            tdTime.title = '单击选中该行，脱离单元格编辑模式并继续以 Enter 打点';
+            tdTime.onclick = (e) => {
+                e.stopPropagation();
+                if (document.activeElement && document.activeElement.blur) {
+                    document.activeElement.blur();
                 }
+                selectRow(index, true);
+                gridContainer.focus();
             };
 
-            tr.innerHTML = `
-                <td class="col-time" contenteditable="true" onblur="updateRowData(${index}, 'time', this.innerText)">${row.time}</td>
-                <td class="col-lyric" contenteditable="true" onblur="updateRowData(${index}, 'lyric', this.innerText)">${escapeHtml(row.lyric)}</td>
-                <td class="col-ruby" contenteditable="true" onblur="updateRowData(${index}, 'ruby', this.innerText)">${escapeHtml(row.ruby)}</td>
-            `;
+            // 歌詞单元格：单击直接编辑，支持 Tab 词块切分 / Enter 插入 [/] / 上下键如 Excel 换行
+            const tdLyric = document.createElement('td');
+            tdLyric.className = 'col-lyric editable-cell';
+            tdLyric.contentEditable = "true";
+            tdLyric.textContent = row.lyric || '';
+            tdLyric.onfocus = () => {
+                selectedIndex = index;
+                updateSelectedRowStyle();
+            };
+            tdLyric.onblur = () => {
+                updateRowData(index, 'lyric', tdLyric.innerText);
+            };
+            tdLyric.onkeydown = (e) => handleLyricCellKeyDown(e, index, tdLyric);
+
+            // ルビ单元格：单击直接编辑，支持上下键换行
+            const tdRuby = document.createElement('td');
+            tdRuby.className = 'col-ruby editable-cell';
+            tdRuby.contentEditable = "true";
+            tdRuby.textContent = row.ruby || '';
+            tdRuby.onfocus = () => {
+                selectedIndex = index;
+                updateSelectedRowStyle();
+            };
+            tdRuby.onblur = () => {
+                updateRowData(index, 'ruby', tdRuby.innerText);
+            };
+            tdRuby.onkeydown = (e) => handleRubyCellKeyDown(e, index, tdRuby);
+
+            tr.appendChild(tdTime);
+            tr.appendChild(tdLyric);
+            tr.appendChild(tdRuby);
             gridBody.appendChild(tr);
         });
+
+        if (scrollIntoView) {
+            scrollToSelectedRow();
+        }
+
+        if (focusTarget) {
+            setTimeout(() => {
+                focusCell(focusTarget.index, focusTarget.field, focusTarget.atEnd);
+            }, 10);
+        }
+    }
+
+    function updateSelectedRowStyle() {
+        for (let i = 0; i < gridBody.children.length; i++) {
+            const tr = gridBody.children[i];
+            if (i === selectedIndex) {
+                tr.classList.add('selected');
+            } else {
+                tr.classList.remove('selected');
+            }
+        }
+    }
+
+    function focusCell(index, field, atEnd = false) {
+        if (index < 0 || index >= gridBody.children.length) return;
+        const tr = gridBody.children[index];
+        const cell = field === 'ruby' ? tr.querySelector('.col-ruby') : tr.querySelector('.col-lyric');
+        if (cell) {
+            cell.focus();
+            if (cell.childNodes.length > 0) {
+                const range = document.createRange();
+                const sel = window.getSelection();
+                range.selectNodeContents(cell);
+                if (atEnd) {
+                    range.collapse(false);
+                } else {
+                    range.collapse(true);
+                }
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+        }
+    }
+
+    /**
+     * 【歌詞】单元格内的按键逻辑
+     */
+    function handleLyricCellKeyDown(e, index, cell) {
+        // Tab 键：光标处切分词块或末尾插入空白新行
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            cell.onblur = null;
+            const sel = window.getSelection();
+            let cursorPos = 0;
+            let fullText = cell.innerText;
+            if (sel.rangeCount > 0) {
+                const range = sel.getRangeAt(0);
+                const preCaretRange = range.cloneRange();
+                preCaretRange.selectNodeContents(cell);
+                preCaretRange.setEnd(range.endContainer, range.endOffset);
+                cursorPos = preCaretRange.toString().length;
+            }
+
+            if (cursorPos >= fullText.length) {
+                // 光标在最后：下方插入一个空白新行
+                tableData[index].lyric = fullText;
+                tableData.splice(index + 1, 0, { time: "", lyric: "", ruby: "" });
+                selectedIndex = index + 1;
+                markDirty();
+                renderTable(true, { index: index + 1, field: 'lyric', atEnd: false });
+            } else {
+                // 光标在中间：将当前词块在光标处一分为二
+                const leftPart = fullText.slice(0, cursorPos);
+                const rightPart = fullText.slice(cursorPos);
+                tableData[index].lyric = leftPart;
+                tableData.splice(index + 1, 0, { time: "", lyric: rightPart, ruby: "" });
+                selectedIndex = index + 1;
+                markDirty();
+                renderTable(true, { index: index + 1, field: 'lyric', atEnd: false });
+            }
+            return;
+        }
+
+        // Enter 键：光标处拆分乐句，光标后内容跟随到新乐句中，并在两句之间插入 [/] 标记行
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            cell.onblur = null;
+
+            const sel = window.getSelection();
+            let cursorPos = 0;
+            let fullText = cell.innerText.replace(/\r\n|\r|\n/g, '');
+            if (sel.rangeCount > 0) {
+                const range = sel.getRangeAt(0);
+                const preCaretRange = range.cloneRange();
+                preCaretRange.selectNodeContents(cell);
+                preCaretRange.setEnd(range.endContainer, range.endOffset);
+                cursorPos = preCaretRange.toString().length;
+            }
+
+            if (cursorPos >= fullText.length) {
+                tableData[index].lyric = fullText;
+                tableData.splice(index + 1, 0, { time: "", lyric: "/", ruby: "" });
+                tableData.splice(index + 2, 0, { time: "", lyric: "", ruby: "" });
+                selectedIndex = index + 2;
+                markDirty();
+                renderTable(true, { index: index + 2, field: 'lyric', atEnd: false });
+            } else {
+                const leftPart = fullText.slice(0, cursorPos);
+                const rightPart = fullText.slice(cursorPos);
+                tableData[index].lyric = leftPart;
+                tableData.splice(index + 1, 0, { time: "", lyric: "/", ruby: "" });
+                tableData.splice(index + 2, 0, { time: "", lyric: rightPart, ruby: "" });
+                selectedIndex = index + 2;
+                markDirty();
+                renderTable(true, { index: index + 2, field: 'lyric', atEnd: false });
+            }
+            return;
+        }
+
+        // 上下键：像 Excel 一样在上下行的【歌詞】单元格间移动
+        if (e.key === 'ArrowUp') {
+            if (index > 0) {
+                e.preventDefault();
+                tableData[index].lyric = cell.innerText.replace(/\r\n|\r|\n/g, '');
+                selectedIndex = index - 1;
+                renderTable(true, { index: index - 1, field: 'lyric', atEnd: true });
+            }
+            return;
+        }
+        if (e.key === 'ArrowDown') {
+            if (index < tableData.length - 1) {
+                e.preventDefault();
+                tableData[index].lyric = cell.innerText.replace(/\r\n|\r|\n/g, '');
+                selectedIndex = index + 1;
+                renderTable(true, { index: index + 1, field: 'lyric', atEnd: true });
+            }
+            return;
+        }
+    }
+
+    /**
+     * 【ルビ】单元格内的按键逻辑
+     */
+    function handleRubyCellKeyDown(e, index, cell) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            tableData[index].ruby = cell.innerText.trim();
+            if (index < tableData.length - 1) {
+                selectedIndex = index + 1;
+                renderTable(true, { index: index + 1, field: 'ruby', atEnd: true });
+            }
+            return;
+        }
+        if (e.key === 'ArrowUp') {
+            if (index > 0) {
+                e.preventDefault();
+                tableData[index].ruby = cell.innerText.trim();
+                selectedIndex = index - 1;
+                renderTable(true, { index: index - 1, field: 'ruby', atEnd: true });
+            }
+            return;
+        }
+        if (e.key === 'ArrowDown') {
+            if (index < tableData.length - 1) {
+                e.preventDefault();
+                tableData[index].ruby = cell.innerText.trim();
+                selectedIndex = index + 1;
+                renderTable(true, { index: index + 1, field: 'ruby', atEnd: true });
+            }
+            return;
+        }
     }
 
     function escapeHtml(str) {
@@ -277,20 +587,134 @@
     }
 
     function updateRowData(index, field, val) {
-        tableData[index][field] = val;
-        markDirty();
-    }
-
-    function loadAudioFile(input) {
-        if (input.files && input.files[0]) {
-            const file = input.files[0];
-            audio.src = URL.createObjectURL(file);
-            document.getElementById('metaSource').value = file.name;
+        if (tableData[index]) {
+            tableData[index][field] = val.trim();
             markDirty();
         }
     }
 
+    function selectRow(index, jumpAudio = false) {
+        if (index < 0) index = 0;
+        if (index >= tableData.length) index = tableData.length - 1;
+        selectedIndex = index;
+        renderTable(true);
+
+        if (jumpAudio && tableData[selectedIndex] && tableData[selectedIndex].time) {
+            const sec = timeCodeToSeconds(tableData[selectedIndex].time);
+            if (!isNaN(sec) && sec >= 0 && !isNaN(audio.duration)) {
+                audio.currentTime = sec;
+                updateTimerDisplay();
+            }
+        }
+    }
+
+    function scrollToSelectedRow() {
+        const selectedTr = gridBody.children[selectedIndex];
+        if (selectedTr) {
+            const containerTop = gridContainer.scrollTop;
+            const containerBottom = containerTop + gridContainer.clientHeight;
+            const elemTop = selectedTr.offsetTop;
+            const elemBottom = elemTop + selectedTr.offsetHeight;
+
+            if (elemTop < containerTop + 24 || elemBottom > containerBottom - 24) {
+                gridContainer.scrollTop = elemTop - Math.floor(gridContainer.clientHeight / 2);
+            }
+        }
+    }
+
+    /**
+     * 核心打轴交互：Enter 打点并自动跳至下一行
+     */
+    function recordStampAndAdvance() {
+        const tc = secondsToTimeCode(audio.currentTime || 0);
+        if (tableData[selectedIndex]) {
+            tableData[selectedIndex].time = tc;
+            markDirty();
+        }
+
+        // 自动推进到下一行
+        if (selectedIndex < tableData.length - 1) {
+            selectedIndex++;
+            renderTable(true);
+        } else {
+            tableData.push({ time: "", lyric: "", ruby: "" });
+            selectedIndex = tableData.length - 1;
+            renderTable(true);
+        }
+    }
+
+    /**
+     * 微调当前行时间戳（以 1 帧 = 1/60 秒）
+     */
+    function adjustCurrentRowFrames(deltaFrames) {
+        if (!tableData[selectedIndex]) return;
+        let sec = tableData[selectedIndex].time ? timeCodeToSeconds(tableData[selectedIndex].time) : (audio.currentTime || 0);
+        sec += (deltaFrames / 60.0);
+        if (sec < 0) sec = 0;
+        tableData[selectedIndex].time = secondsToTimeCode(sec);
+        markDirty();
+        renderTable();
+    }
+
+    /**
+     * 键盘事件全局捕获 (打轴模式：当焦点不在单元格输入时)
+     */
+    window.addEventListener('keydown', (e) => {
+        const tag = (e.target && e.target.tagName) ? e.target.tagName.toUpperCase() : '';
+        const isEditingCell = e.target && e.target.getAttribute && e.target.getAttribute('contenteditable') === 'true';
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || isEditingCell) {
+            return;
+        }
+
+        if (e.code === 'Space') {
+            e.preventDefault();
+            togglePlay();
+        } else if (e.code === 'Enter') {
+            e.preventDefault();
+            recordStampAndAdvance();
+        } else if (e.code === 'Delete' || e.key === 'Delete') {
+            e.preventDefault();
+            if (tableData.length > 1) {
+                tableData.splice(selectedIndex, 1);
+                if (selectedIndex >= tableData.length) {
+                    selectedIndex = tableData.length - 1;
+                }
+                markDirty();
+                renderTable(true);
+            } else {
+                tableData[0] = { time: "", lyric: "", ruby: "" };
+                markDirty();
+                renderTable(true);
+            }
+        } else if (e.code === 'Backspace') {
+            e.preventDefault();
+            if (tableData[selectedIndex]) {
+                tableData[selectedIndex].time = "";
+                markDirty();
+            }
+            if (selectedIndex > 0) {
+                selectRow(selectedIndex - 1);
+            }
+        } else if (e.code === 'ArrowUp') {
+            e.preventDefault();
+            selectRow(selectedIndex - 1);
+        } else if (e.code === 'ArrowDown') {
+            e.preventDefault();
+            selectRow(selectedIndex + 1);
+        } else if (e.code === 'ArrowLeft') {
+            e.preventDefault();
+            adjustCurrentRowFrames(e.shiftKey ? -10 : -1);
+        } else if (e.code === 'ArrowRight') {
+            e.preventDefault();
+            adjustCurrentRowFrames(e.shiftKey ? 10 : 1);
+        }
+    });
+
+    /**
+     * 音频控制与播放进度
+     */
     function togglePlay() {
+        if (isNaN(audio.duration) || audio.duration === 0) return;
         if (audio.paused) {
             audio.play();
             document.getElementById('playPauseBtn').innerText = "❚❚";
@@ -307,23 +731,43 @@
         updateTimerDisplay();
     }
 
+    function stepFrame(frames) {
+        if (isNaN(audio.duration)) return;
+        audio.currentTime = Math.max(0, audio.currentTime + (frames / 60.0));
+        updateTimerDisplay();
+    }
+
+    function seekAudio(sec) {
+        if (!isNaN(audio.duration)) {
+            audio.currentTime = sec;
+            updateTimerDisplay();
+        }
+    }
+
+    function seekAudioByPercent(val) {
+        if (!isNaN(audio.duration) && audio.duration > 0) {
+            audio.currentTime = (val / 100) * audio.duration;
+            updateTimerDisplay();
+        }
+    }
+
     function changeSpeed(val) {
         audio.playbackRate = parseFloat(val);
         speedVal.innerText = `${parseFloat(val).toFixed(1)}x`;
     }
 
     function updateTimerDisplay() {
-        if (isNaN(audio.duration) || audio.duration === 0) {
-            timerDigits.innerText = "00:00:00";
+        const cur = audio.currentTime || 0;
+        const dur = audio.duration || 0;
+
+        timerDigits.innerText = secondsToTimeCode(cur);
+        mediaTimeInfo.innerText = `${secondsToTimeCode(cur)} / ${secondsToTimeCode(dur)}`;
+
+        if (dur > 0) {
+            progressSlider.value = (cur / dur) * 100;
+        } else {
             progressSlider.value = 0;
-            return;
         }
-        const cur = audio.currentTime;
-        const m = Math.floor(cur / 60).toString().padStart(2, '0');
-        const s = Math.floor(cur % 60).toString().padStart(2, '0');
-        const ms = Math.floor((cur % 1) * 100).toString().padStart(2, '0');
-        timerDigits.innerText = `${m}:${s}:${ms}`;
-        progressSlider.value = (cur / audio.duration) * 100;
 
         if (!audio.paused) {
             requestAnimationFrame(updateTimerDisplay);
@@ -334,58 +778,214 @@
     audio.onpause = () => { updateTimerDisplay(); };
     audio.onended = () => { document.getElementById('playPauseBtn').innerText = "▶"; updateTimerDisplay(); };
 
-    function formatTimeCode(sec) {
-        const m = Math.floor(sec / 60).toString().padStart(2, '0');
-        const s = Math.floor(sec % 60).toString().padStart(2, '0');
-        const ms = Math.floor((sec % 1) * 100).toString().padStart(2, '0');
-        return `${m}:${s}:${ms}`;
-    }
-
-    function timeCodeToSeconds(tcStr) {
-        const parts = tcStr.split(':');
-        if (parts.length < 3) return 0;
-        return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10) + parseInt(parts[2], 10) / 100.0;
-    }
-
-    function jumpAudioToTime(tcStr) {
-        const sec = timeCodeToSeconds(tcStr);
-        if (!isNaN(sec)) {
-            audio.currentTime = sec;
-            updateTimerDisplay();
+    /**
+     * 媒体选择
+     */
+    async function browseMediaFile() {
+        try {
+            const filePath = await ipcRenderer.invoke('SELECT_MEDIA_FILE');
+            if (filePath) {
+                audio.src = `file://${filePath.replace(/\\/g, '/')}`;
+                document.getElementById('metaSource').value = path.basename(filePath);
+                markDirty();
+                audio.load();
+            }
+        } catch (e) {
+            console.error('选取媒体失败:', e);
         }
     }
 
-    function insertCurrentTimestamp() {
-        if (isNaN(audio.duration)) return;
-        const tc = formatTimeCode(audio.currentTime);
-        if (tableData[selectedIndex]) {
-            tableData[selectedIndex].time = tc;
-            markDirty();
-            renderTable();
+    async function browseTitleImageFile() {
+        try {
+            const filePath = await ipcRenderer.invoke('SELECT_TITLE_IMAGE_FILE');
+            if (filePath) {
+                document.getElementById('metaExtraTitle').value = path.basename(filePath);
+                rawHeaderMeta.titleimage = path.basename(filePath);
+                markDirty();
+            }
+        } catch (e) {
+            console.error('选取海报失败:', e);
         }
     }
 
-    function seekAudio(val) {
-        if (!isNaN(audio.duration)) {
-            audio.currentTime = (val / 100) * audio.duration;
-            updateTimerDisplay();
+    /**
+     * 歌词一括入力 (方案B: 按行/词分行)
+     */
+    function openBulkInputModal() {
+        document.getElementById('bulkInputModal').classList.add('show');
+        document.getElementById('bulkLyricText').focus();
+    }
+
+    function closeBulkInputModal() {
+        document.getElementById('bulkInputModal').classList.remove('show');
+    }
+
+    function applyBulkInput(replace = false) {
+        const text = document.getElementById('bulkLyricText').value;
+        if (!text.trim()) {
+            closeBulkInputModal();
+            return;
+        }
+
+        const lines = text.split(/[\r\n]+/);
+        const newRows = [];
+
+        lines.forEach(line => {
+            line = line.trim();
+            if (!line) return;
+
+            // 如果该行有制表符 Tab，拆分成各词块
+            if (line.includes('\t')) {
+                const parts = line.split('\t');
+                parts.forEach(p => {
+                    p = p.trim();
+                    if (p) newRows.push({ time: "", lyric: p, ruby: "" });
+                });
+                newRows.push({ time: "", lyric: "/", ruby: "" });
+            } else {
+                newRows.push({ time: "", lyric: line, ruby: "" });
+                newRows.push({ time: "", lyric: "/", ruby: "" });
+            }
+        });
+
+        if (replace) {
+            tableData = [
+                { time: "00:00:00", lyric: "<clear>", ruby: "" },
+                ...newRows
+            ];
+            selectedIndex = 1;
+        } else {
+            tableData.push(...newRows);
+        }
+
+        markDirty();
+        renderTable(true);
+        closeBulkInputModal();
+        document.getElementById('bulkLyricText').value = "";
+    }
+
+    /**
+     * JoyHack 歌词文件序列化生成 (以 UTF-8 带 BOM 输出)
+     */
+    function generateOutputContent() {
+        let output = `<version>${rawHeaderMeta.version || '2.1.0'}\n`;
+        output += `<title>${document.getElementById('metaTitle').value}\n`;
+        output += `<lyrics>${document.getElementById('metaLyrics').value}\n`;
+        output += `<music>${document.getElementById('metaMusic').value}\n`;
+        output += `<singer>${document.getElementById('metaSinger').value}\n`;
+        output += `<works>${document.getElementById('metaWorks').value}\n`;
+        output += `<render>${rawHeaderMeta.render || ''}\n`;
+        output += `<year>${document.getElementById('metaYear').value}\n`;
+        output += `<author>${document.getElementById('metaAuthor').value}\n`;
+        output += `<timeCodeFix>${document.getElementById('metaFix').value || '-00:00:00'}\n`;
+        output += `<searchKey>${document.getElementById('metaKana').value}\n`;
+        output += `<titleimage>${rawHeaderMeta.titleimage || document.getElementById('metaExtraTitle').value || ''}\n`;
+        output += `<source>${document.getElementById('metaSource').value}\n`;
+
+        let currentWords = [];
+        let currentTimes = [];
+
+        tableData.forEach(row => {
+            if (row.lyric === '/') {
+                if (row.time) currentTimes.push(row.time);
+                let lineStr = currentWords.join('\t');
+                if (currentTimes.length > 0) {
+                    lineStr += '\t<time>\t' + currentTimes.join('\t');
+                } else {
+                    lineStr += '\t<time>\t';
+                }
+                output += lineStr + '\n';
+                currentWords = [];
+                currentTimes = [];
+            } else {
+                let w = row.lyric === "" ? " " : row.lyric;
+                // 如果有 ruby 标注，拼接成 漢字<ruby>ルビ
+                if (row.ruby && row.ruby.trim()) {
+                    w += `<ruby>${row.ruby.trim()}`;
+                }
+                currentWords.push(w);
+                if (row.time) currentTimes.push(row.time);
+            }
+        });
+
+        if (currentWords.length > 0 || currentTimes.length > 0) {
+            let lineStr = currentWords.join('\t');
+            if (currentTimes.length > 0) {
+                lineStr += '\t<time>\t' + currentTimes.join('\t');
+            } else {
+                lineStr += '\t<time>\t';
+            }
+            output += lineStr + '\n';
+        }
+
+        return output;
+    }
+
+    function saveProjectFile() {
+        if (currentFilePath && fs.existsSync(currentFilePath)) {
+            const content = generateOutputContent();
+            fs.writeFileSync(currentFilePath, '\uFEFF' + content, 'utf8');
+            isDirty = false;
+            ipcRenderer.send('SET_EDITOR_DIRTY', false);
+            updateHeaderTitle();
+        } else {
+            saveProjectFileAs();
         }
     }
 
-    function updateHeaderTitle() {
-        const t = document.getElementById('metaTitle').value;
-        const baseName = currentFileName || (t ? `${t}.txt` : 'Untitled.txt');
-        document.title = `${baseName}${isDirty ? ' *' : ''} - RecENT (JoyHack)`;
+    function saveProjectFileAs() {
+        const content = generateOutputContent();
+        const blob = new Blob(['\uFEFF' + content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const saveName = currentFileName || (document.getElementById('metaTitle').value || 'song') + '.txt';
+        a.download = saveName;
+        a.click();
+        URL.revokeObjectURL(url);
+        isDirty = false;
+        updateHeaderTitle();
     }
 
-    // 完全对齐 RecENT 的元数据提取与歌词解构引擎
+    function resetToNewFile() {
+        tableData = [
+            { time: "00:00:00", lyric: "<clear>", ruby: "" },
+            { time: "", lyric: "/", ruby: "" }
+        ];
+        currentFilePath = "";
+        currentFileName = "Untitled.txt";
+        isDirty = false;
+
+        document.getElementById('metaTitle').value = "";
+        document.getElementById('metaKana').value = "";
+        document.getElementById('metaSinger').value = "";
+        document.getElementById('metaWorks').value = "";
+        document.getElementById('metaMusic').value = "";
+        document.getElementById('metaLyrics').value = "";
+        document.getElementById('metaSource').value = "";
+        document.getElementById('metaAuthor').value = "";
+        document.getElementById('metaYear').value = "";
+        document.getElementById('metaExtraTitle').value = "";
+        document.getElementById('metaFix').value = "-00:00:00";
+
+        audio.pause();
+        audio.src = "";
+        selectedIndex = 0;
+        renderTable();
+        updateHeaderTitle();
+        updateTimerDisplay();
+    }
+
+    /**
+     * 读取与反解现有 JoyHack 歌词文件
+     */
     function parseJoyHackText(text, filePath = "", fileName = "") {
         currentFilePath = filePath;
         currentFileName = fileName || (filePath ? path.basename(filePath) : "Untitled.txt");
         isDirty = false;
 
         const extractTag = (tagName) => {
-            const reg = new RegExp(`<${tagName}>([^\r\n]*)`, 'i');
+            const reg = new RegExp(`<${tagName}>([^\\r\\n]*)`, 'i');
             const match = text.match(reg);
             return match ? match[1].trim() : '';
         };
@@ -399,7 +999,8 @@
         document.getElementById('metaSource').value = extractTag('source');
         document.getElementById('metaAuthor').value = extractTag('author');
         document.getElementById('metaYear').value = extractTag('year');
-        document.getElementById('metaFix').value = extractTag('timeCodeFix') || '+00:00:00';
+        document.getElementById('metaFix').value = extractTag('timeCodeFix') || '-00:00:00';
+        document.getElementById('metaExtraTitle').value = extractTag('titleimage');
         
         rawHeaderMeta.version = extractTag('version') || '2.1.0';
         rawHeaderMeta.render = extractTag('render') || '';
@@ -408,10 +1009,20 @@
 
         tableData = [];
 
+        // 尝试自动加载同目录下的媒体音视频
+        if (filePath && extractTag('source')) {
+            const dir = path.dirname(filePath);
+            const mediaFile = path.join(dir, extractTag('source'));
+            if (fs.existsSync(mediaFile)) {
+                audio.src = `file://${mediaFile.replace(/\\/g, '/')}`;
+                audio.load();
+            }
+        }
+
         let lyricStream = text;
         const tagsToRemove = ['version', 'title', 'lyrics', 'music', 'singer', 'works', 'render', 'year', 'author', 'timeCodeFix', 'searchKey', 'titleimage', 'source'];
         tagsToRemove.forEach(tag => {
-            const regex = new RegExp(`<${tag}>[^\r\n]*[\r\n]*`, 'gi');
+            const regex = new RegExp(`<${tag}>[^\\r\\n]*[\\r\\n]*`, 'gi');
             lyricStream = lyricStream.replace(regex, '');
         });
 
@@ -419,7 +1030,6 @@
         lines.forEach(line => {
             if (!line.trim() && !line.includes('\t')) return;
 
-            const hasTimeTag = line.includes('<time>');
             const parts = line.split('<time>');
             const wordsPart = parts[0];
             const timesPart = parts[1] || '';
@@ -436,148 +1046,62 @@
                 for (let i = 0; i < maxLen; i++) {
                     let timeVal = times[i] || "";
                     let lyricVal = "";
+                    let rubyVal = "";
 
                     if (i < rawWords.length) {
                         let w = rawWords[i];
-                        lyricVal = (w === ' ' || w === ' ') ? "" : w;
+                        if (w.includes('<ruby>')) {
+                            const rubyMatch = w.match(/(.*?)<ruby>(.*)/i);
+                            if (rubyMatch) {
+                                lyricVal = rubyMatch[1];
+                                rubyVal = rubyMatch[2];
+                            } else {
+                                lyricVal = w;
+                            }
+                        } else {
+                            lyricVal = (w === ' ' || w === '　') ? "" : w;
+                        }
                     } else {
                         lyricVal = "/";
                     }
 
-                    tableData.push({ time: timeVal, lyric: lyricVal, ruby: "" });
+                    tableData.push({ time: timeVal, lyric: lyricVal, ruby: rubyVal });
                 }
             } else {
                 rawWords.forEach(w => {
-                    let lyricVal = (w === ' ' || w === ' ') ? "" : w;
-                    tableData.push({ time: "", lyric: lyricVal, ruby: "" });
+                    let lyricVal = (w === ' ' || w === '　') ? "" : w;
+                    let rubyVal = "";
+                    if (lyricVal.includes('<ruby>')) {
+                        const rubyMatch = lyricVal.match(/(.*?)<ruby>(.*)/i);
+                        if (rubyMatch) {
+                            lyricVal = rubyMatch[1];
+                            rubyVal = rubyMatch[2];
+                        }
+                    }
+                    tableData.push({ time: "", lyric: lyricVal, ruby: rubyVal });
                 });
-                
-                if (hasTimeTag || rawWords.length > 0) {
-                    tableData.push({ time: "", lyric: "/", ruby: "" });
-                }
+                tableData.push({ time: "", lyric: "/", ruby: "" });
             }
         });
 
         if (tableData.length === 0) {
-            tableData.push({ time: "", lyric: "", ruby: "" });
+            tableData.push({ time: "00:00:00", lyric: "<clear>", ruby: "" });
+            tableData.push({ time: "", lyric: "/", ruby: "" });
         }
         
         selectedIndex = 0;
         renderTable();
         updateHeaderTitle();
+        updateTimerDisplay();
     }
 
-    function resetToNewFile() {
-        tableData = [{ time: "", lyric: "", ruby: "" }];
-        currentFilePath = "";
-        currentFileName = "Untitled.txt";
-        isDirty = false;
-
-        document.getElementById('metaTitle').value = "";
-        document.getElementById('metaKana').value = "";
-        document.getElementById('metaSinger').value = "";
-        document.getElementById('metaWorks').value = "";
-        document.getElementById('metaMusic').value = "";
-        document.getElementById('metaLyrics').value = "";
-        document.getElementById('metaSource').value = "";
-        document.getElementById('metaAuthor').value = "";
-        document.getElementById('metaYear').value = "";
-        document.getElementById('metaExtraTitle').value = "";
-        document.getElementById('metaFix').value = "+00:00:00";
-
-        renderTable();
-        updateHeaderTitle();
-    }
-
-    // RecENT 标准格式序列化（严格按换行与 \t<time>\t 生成 txt）
-    function generateOutputContent() {
-        let output = `<version>${rawHeaderMeta.version}\n`;
-        output += `<title>${document.getElementById('metaTitle').value}\n`;
-        output += `<lyrics>${document.getElementById('metaLyrics').value}\n`;
-        output += `<music>${document.getElementById('metaMusic').value}\n`;
-        output += `<singer>${document.getElementById('metaSinger').value}\n`;
-        output += `<works>${document.getElementById('metaWorks').value}\n`;
-        output += `<render>${rawHeaderMeta.render}\n`;
-        output += `<year>${document.getElementById('metaYear').value}\n`;
-        output += `<author>${document.getElementById('metaAuthor').value}\n`;
-        output += `<timeCodeFix>${document.getElementById('metaFix').value}\n`;
-        output += `<searchKey>${document.getElementById('metaKana').value}\n`;
-        output += `<titleimage>${rawHeaderMeta.titleimage}\n`;
-        output += `<source>${document.getElementById('metaSource').value}\n`;
-
-        let currentWords = [];
-        let currentTimes = [];
-
-        tableData.forEach(row => {
-            if (row.lyric === '/') {
-                if (row.time) {
-                    currentTimes.push(row.time);
-                }
-                // 遇到 '/' 节点即代表一个乐句分句结束，写入当前行并物理换行
-                let lineStr = currentWords.join('\t');
-                if (currentTimes.length > 0) {
-                    lineStr += '\t<time>\t' + currentTimes.join('\t');
-                } else {
-                    lineStr += '\t<time>\t';
-                }
-                output += lineStr + '\n';
-
-                currentWords = [];
-                currentTimes = [];
-            } else {
-                let w = row.lyric === "" ? " " : row.lyric;
-                currentWords.push(w);
-                if (row.time) currentTimes.push(row.time);
-            }
-        });
-
-        // 处理末尾未以 '/' 结尾的剩余词条
-        if (currentWords.length > 0 || currentTimes.length > 0) {
-            let lineStr = currentWords.join('\t');
-            if (currentTimes.length > 0) {
-                lineStr += '\t<time>\t' + currentTimes.join('\t');
-            } else {
-                lineStr += '\t<time>\t';
-            }
-            output += lineStr + '\n';
-        }
-
-        return output;
-    }
-
-    // 直接覆盖保存（Save）
-    function saveProjectFile() {
-        if (currentFilePath && fs.existsSync(currentFilePath)) {
-            const content = generateOutputContent();
-            const buffer = iconv.encode(content, 'cp932');
-            fs.writeFileSync(currentFilePath, buffer);
-            isDirty = false;
-            updateHeaderTitle();
-        } else {
-            saveProjectFileAs();
-        }
-    }
-
-    // 另存为（Save As...）
-    function saveProjectFileAs() {
-        const content = generateOutputContent();
-        const blob = new Blob([iconv.encode(content, 'cp932')], { type: 'text/plain;charset=shift_jis' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        const saveName = currentFileName || (document.getElementById('metaTitle').value || 'song') + '.txt';
-        a.download = saveName;
-        a.click();
-        URL.revokeObjectURL(url);
-
-        isDirty = false;
-        updateHeaderTitle();
-    }
-
+    /**
+     * 响应主进程菜单命令
+     */
     ipcRenderer.on('EDITOR_CMD', (event, cmd) => {
         if (cmd === 'NEW') {
             if (isDirty) {
-                if (confirm(i18n[currentLang].confirmNew)) {
+                if (confirm('現在の編集内容を破棄して新規作成しますか？')) {
                     resetToNewFile();
                 }
             } else {
@@ -587,17 +1111,21 @@
             saveProjectFile();
         } else if (cmd === 'SAVE_AS') {
             saveProjectFileAs();
-        } else if (cmd === 'OPEN_SETTINGS') {
-            openSettings();
         } else if (cmd === 'TAG_CLEAR') {
-            tableData.push({ time: formatTimeCode(audio.currentTime || 0), lyric: "<clear>", ruby: "" });
-            markDirty();
-            renderTable();
+            insertTagAtCursor('<clear>');
         } else if (cmd === 'TAG_COLOR') {
-            tableData.push({ time: formatTimeCode(audio.currentTime || 0), lyric: "<color>FFFFFF,FF8080,FF8080,FFFFFF,FFFFFF,000000,000000,FFFFFF", ruby: "" });
-            markDirty();
-            renderTable();
+            insertTagAtCursor('<color>FFFFFF,FF8080,FF8080,FFFFFF,FFFFFF,000000,000000,FFFFFF');
+        } else if (cmd === 'TAG_IMAGE') {
+            insertTagAtCursor('<image>');
+        } else if (cmd === 'TAG_SKIP') {
+            insertTagAtCursor('<skip>');
         }
+    });
+
+    
+    ipcRenderer.on('PROMPT_SAVE_BEFORE_CLOSE', (event) => {
+        saveProjectFile();
+        ipcRenderer.send('CONFIRM_CLOSE_EDITOR');
     });
 
     ipcRenderer.on('LOAD_SONG_CONTENT', (event, data) => {
@@ -606,7 +1134,6 @@
         }
     });
 
-    applyLanguage(currentLang);
     renderTable();
     updateTimerDisplay();
 </script>

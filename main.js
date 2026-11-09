@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
+﻿const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const http = require('http');
 const express = require('express');
@@ -14,6 +14,18 @@ const io = require('socket.io')(server);
 const PORT = 3000;
 let mainWindow = null;
 let editorWindow = null;
+let isEditorDirty = false;
+
+ipcMain.on('SET_EDITOR_DIRTY', (event, dirty) => {
+    isEditorDirty = dirty;
+});
+
+ipcMain.on('CONFIRM_CLOSE_EDITOR', () => {
+    if (editorWindow) {
+        editorWindow.destroy();
+        editorWindow = null;
+    }
+});
 let currentQueue = [];
 let currentPitchVal = 0;
 
@@ -356,6 +368,177 @@ function createEditorWindow() {
     });
     editorWindow.loadFile(path.join(__dirname, 'public', 'editor.html'));
 
+    ﻿/**
+ * 歌词文件编码检测与无损转换为标准 UTF-8 (BOM)
+ */
+function fixSongBufferToUtf8(buffer) {
+    if (!buffer || buffer.length === 0) return { fixed: false, content: '' };
+
+    // 1. 嗅探并解析 ISO-2022-JP (JIS)
+    let hasIsoEsc = false;
+    for (let i = 0; i < buffer.length - 2; i++) {
+        if (buffer[i] === 0x1B && buffer[i+1] === 0x24 && (buffer[i+2] === 0x42 || buffer[i+2] === 0x40)) {
+            hasIsoEsc = true;
+            break;
+        }
+    }
+    if (hasIsoEsc) {
+        const eucBytes = [];
+        let mode = 'ascii';
+        let i = 0;
+        while (i < buffer.length) {
+            if (buffer[i] === 0x1B && i + 2 < buffer.length) {
+                if (buffer[i+1] === 0x24 && (buffer[i+2] === 0x42 || buffer[i+2] === 0x40)) {
+                    mode = 'jis0208';
+                    i += 3;
+                    continue;
+                } else if (buffer[i+1] === 0x28 && (buffer[i+2] === 0x42 || buffer[i+2] === 0x4A)) {
+                    mode = 'ascii';
+                    i += 3;
+                    continue;
+                } else if (buffer[i+1] === 0x28 && buffer[i+2] === 0x49) {
+                    mode = 'kana';
+                    i += 3;
+                    continue;
+                }
+            }
+            if (mode === 'ascii') {
+                eucBytes.push(buffer[i]);
+                i++;
+            } else if (mode === 'jis0208') {
+                if (i + 1 < buffer.length) {
+                    eucBytes.push(buffer[i] | 0x80);
+                    eucBytes.push(buffer[i+1] | 0x80);
+                    i += 2;
+                } else {
+                    eucBytes.push(buffer[i]);
+                    i++;
+                }
+            } else if (mode === 'kana') {
+                eucBytes.push(0x8E);
+                eucBytes.push(buffer[i] | 0x80);
+                i++;
+            }
+        }
+        const text = iconv.decode(Buffer.from(eucBytes), 'euc-jp');
+        return { fixed: true, encoding: 'ISO-2022-JP', content: text };
+    }
+
+    // 2. 嗅探并解析 UTF-7
+    const rawAscii = buffer.toString('binary');
+    if (rawAscii.includes('+ADw-') || rawAscii.includes('+AD4-')) {
+        const text = rawAscii.replace(/\+([A-Za-z0-9\/]+)-/g, (match, b64) => {
+            try {
+                return iconv.decode(Buffer.from(b64, 'base64'), 'utf16be');
+            } catch(e) {
+                return match;
+            }
+        }).replace(/\+-/g, '+');
+        return { fixed: true, encoding: 'UTF-7', content: text };
+    }
+
+    // 3. 嗅探 UTF-16LE / BE
+    if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xFE) {
+        return { fixed: true, encoding: 'UTF-16LE', content: iconv.decode(buffer, 'utf16le') };
+    }
+    if (buffer.length >= 2 && buffer[0] === 0xFE && buffer[1] === 0xFF) {
+        return { fixed: true, encoding: 'UTF-16BE', content: iconv.decode(buffer, 'utf16be') };
+    }
+
+    // 4. 标准 UTF-8 (BOM)
+    if (buffer.length >= 3 && buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
+        return { fixed: false, encoding: 'UTF-8 (BOM)', content: iconv.decode(buffer, 'utf8') };
+    }
+
+    // 5. UTF-8 vs Shift-JIS / CP932
+    let strUtf8 = iconv.decode(buffer, 'utf8');
+    if (!strUtf8.includes('\uFFFD')) {
+        return { fixed: false, encoding: 'UTF-8', content: strUtf8 };
+    } else {
+        const text = iconv.decode(buffer, 'cp932');
+        return { fixed: true, encoding: 'Shift-JIS/CP932', content: text };
+    }
+}
+
+/**
+ * 修正单个歌词文件
+ */
+function fixSingleSongFile(filePath, parentWin) {
+    try {
+        const buffer = fs.readFileSync(filePath);
+        const res = fixSongBufferToUtf8(buffer);
+        if (res.fixed) {
+            fs.writeFileSync(filePath, '\uFEFF' + res.content, 'utf8');
+            dialog.showMessageBox(parentWin, {
+                type: 'info',
+                title: '歌词编码修正成功',
+                message: '已成功修正文件编码！\n\n文件: ' + path.basename(filePath) + '\n原编码: ' + res.encoding + '\n已转换为: UTF-8 (BOM)'
+            });
+            return true;
+        } else {
+            dialog.showMessageBox(parentWin, {
+                type: 'info',
+                title: '无需修正',
+                message: '文件: ' + path.basename(filePath) + '\n该文件当前已经是标准的 ' + res.encoding + ' 编码，无需转换。'
+            });
+            return false;
+        }
+    } catch (e) {
+        dialog.showMessageBox(parentWin, {
+            type: 'error',
+            title: '修正失败',
+            message: '修正歌词文件失败: ' + e.message
+        });
+        return false;
+    }
+}
+
+/**
+ * 批量扫描并修正曲库下所有 .txt 歌词
+ */
+function batchFixSongsDirectory(songsDir, parentWin) {
+    if (!fs.existsSync(songsDir)) {
+        dialog.showMessageBox(parentWin, { type: 'warning', title: '曲库不存在', message: '曲库目录不存在: ' + songsDir });
+        return;
+    }
+    const fixedFiles = [];
+    function scanAndFix(dir) {
+        const list = fs.readdirSync(dir);
+        list.forEach(item => {
+            const p = path.join(dir, item);
+            const stat = fs.statSync(p);
+            if (stat.isDirectory()) {
+                scanAndFix(p);
+            } else if (path.extname(item).toLowerCase() === '.txt') {
+                try {
+                    const buf = fs.readFileSync(p);
+                    const res = fixSongBufferToUtf8(buf);
+                    if (res.fixed) {
+                        fs.writeFileSync(p, '\uFEFF' + res.content, 'utf8');
+                        fixedFiles.push({ file: path.relative(songsDir, p), enc: res.encoding });
+                    }
+                } catch(err) {
+                    console.error('修复文件失败:', p, err);
+                }
+            }
+        });
+    }
+    scanAndFix(songsDir);
+    if (fixedFiles.length > 0) {
+        const details = fixedFiles.slice(0, 10).map(f => '• ' + f.file + ' (原: ' + f.enc + ')').join('\n') + (fixedFiles.length > 10 ? ('\n...等共 ' + fixedFiles.length + ' 个文件') : '');
+        dialog.showMessageBox(parentWin, {
+            type: 'info',
+            title: '批量编码修正完成',
+            message: '扫描完成！共成功转换 ' + fixedFiles.length + ' 个歌词文件为标准 UTF-8：\n\n' + details
+        });
+    } else {
+        dialog.showMessageBox(parentWin, {
+            type: 'info',
+            title: '扫描完成',
+            message: '曲库中所有歌词文件均符合标准 UTF-8 编码，无需修正。'
+        });
+    }
+}
     const editorMenuTemplate = [
         {
             label: 'ファイル',
@@ -451,8 +634,41 @@ function createEditorWindow() {
     const editorMenu = Menu.buildFromTemplate(editorMenuTemplate);
     editorWindow.setMenu(editorMenu);
 
+    let forceCloseEditor = false;
+
+    editorWindow.on('close', (e) => {
+        if (forceCloseEditor) {
+            forceCloseEditor = false;
+            return;
+        }
+
+        if (isEditorDirty) {
+            e.preventDefault();
+            const choice = dialog.showMessageBoxSync(editorWindow, {
+                type: 'question',
+                buttons: ['保存する', '保存しない', 'キャンセル'],
+                defaultId: 0,
+                cancelId: 2,
+                title: 'RecENT (JoyHack)',
+                message: '現在の編集内容を保存しますか？',
+                detail: '保存しない場合、変更内容はすべて破棄されます。'
+            });
+
+            if (choice === 0) {
+                editorWindow.webContents.send('PROMPT_SAVE_BEFORE_CLOSE');
+            } else if (choice === 1) {
+                forceCloseEditor = true;
+                editorWindow.close();
+            } else {
+                // Cancel
+            }
+        }
+    });
+
     editorWindow.on('closed', () => {
         editorWindow = null;
+        isEditorDirty = false;
+        forceCloseEditor = false;
     });
 }
 
@@ -474,7 +690,7 @@ function createWindow() {
 
     mainWindow.loadFile(path.join(__dirname, 'public', 'player.html'));
 
-    const template = [
+﻿    const template = [
         {
             label: 'File',
             submenu: [
@@ -520,12 +736,47 @@ function createWindow() {
             label: 'View',
             submenu: [
                 { role: 'toggleDevTools', label: 'Toggle Developer Tools' },
-                { role: 'togglefullscreen', label: 'Toggle Full Screen' },
-                { type: 'separator' },
-                { 
-                    label: 'Open Lyric Editor', 
+                { role: 'togglefullscreen', label: 'Toggle Full Screen' }
+            ]
+        },
+        {
+            label: 'Tools',
+            submenu: [
+                {
+                    label: 'Open Lyric Editor (RecENT)',
+                    accelerator: 'CmdOrCtrl+E',
                     click: () => {
                         createEditorWindow();
+                    }
+                },
+                { type: 'separator' },
+                {
+                    label: '歌词文件编码修正 (选择文件)...',
+                    click: async () => {
+                        const result = await dialog.showOpenDialog(mainWindow, {
+                            properties: ['openFile'],
+                            filters: [{ name: 'JoyHack Song Files', extensions: ['txt'] }]
+                        });
+                        if (!result.canceled && result.filePaths.length > 0) {
+                            const success = fixSingleSongFile(result.filePaths[0], mainWindow);
+                            if (success && editorWindow) {
+                                try {
+                                    const buf = fs.readFileSync(result.filePaths[0]);
+                                    const c = decodeJapaneseBuffer(buf);
+                                    editorWindow.webContents.send('LOAD_SONG_CONTENT', {
+                                        filePath: result.filePaths[0],
+                                        fileName: path.basename(result.filePaths[0]),
+                                        content: c
+                                    });
+                                } catch (e) {}
+                            }
+                        }
+                    }
+                },
+                {
+                    label: '批量扫描并修正曲库歌词编码 (Songs)...',
+                    click: () => {
+                        batchFixSongsDirectory(songsDirectory, mainWindow);
                     }
                 }
             ]
@@ -540,7 +791,7 @@ function createWindow() {
                             type: 'info',
                             title: 'About JoyHack Player Engine',
                             message: 'JoyHack Player Engine',
-                            detail: 'Version: v0.8.1 (Build 2026)\nCustom Karaoke Engine for JoyHack.'
+                            detail: 'Version: v0.8.5 (Build 2026)\nCustom Karaoke Engine for JoyHack.'
                         });
                     } 
                 }
@@ -570,4 +821,32 @@ app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
         app.quit();
     }
+});
+
+ipcMain.handle('SELECT_MEDIA_FILE', async () => {
+    const result = await dialog.showOpenDialog(editorWindow || mainWindow, {
+        properties: ['openFile'],
+        filters: [
+            { name: 'Media Files (Audio / Video)', extensions: ['mp4', 'mp3', 'wav', 'm4a', 'avi', 'mpg', 'wma'] },
+            { name: 'All Files', extensions: ['*'] }
+        ]
+    });
+    if (!result.canceled && result.filePaths.length > 0) {
+        return result.filePaths[0];
+    }
+    return null;
+});
+
+ipcMain.handle('SELECT_TITLE_IMAGE_FILE', async () => {
+    const result = await dialog.showOpenDialog(editorWindow || mainWindow, {
+        properties: ['openFile'],
+        filters: [
+            { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'bmp'] },
+            { name: 'All Files', extensions: ['*'] }
+        ]
+    });
+    if (!result.canceled && result.filePaths.length > 0) {
+        return result.filePaths[0];
+    }
+    return null;
 });
