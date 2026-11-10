@@ -1136,23 +1136,6 @@
             }
         });
 
-        const pureMainPhrases = phrases.filter(p => !p.isSub && !p.isClearCmd);
-        
-        phrases.forEach(p => {
-            if (p.isSub) {
-                let hostIndex = pureMainPhrases.findIndex(m => p.showTime >= m.showTime && p.showTime <= m.endTime + 1.0);
-                if (hostIndex === -1) {
-                    hostIndex = pureMainPhrases.findIndex(m => m.showTime >= p.showTime);
-                }
-                if (hostIndex === -1 && pureMainPhrases.length > 0) {
-                    hostIndex = pureMainPhrases.length - 1;
-                }
-
-                p.hostMain = hostIndex !== -1 ? pureMainPhrases[hostIndex] : null;
-                p.prevMain = (hostIndex > 0) ? pureMainPhrases[hostIndex - 1] : null;
-            }
-        });
-
         return phrases;
     }
 
@@ -1346,35 +1329,12 @@
 
         const maxMainRows = currentMain.linesCount || 2;
 
-        const activeSub = parsedPhrases.find(p => {
-            if (!p.isSub) return false;
-
-            let isTriggered = false;
-            if (p.hostMain) {
-                const delta = p.showTime - p.hostMain.showTime;
-                if (delta <= 1.5) {
-                    if (p.prevMain) {
-                        isTriggered = curTime >= p.prevMain.showTime;
-                    } else {
-                        isTriggered = curTime >= (p.hostMain.showTime - 2.0);
-                    }
-                } else {
-                    isTriggered = curTime >= (p.showTime - 1.5);
-                }
-            } else {
-                isTriggered = curTime >= (p.showTime - 1.5);
-            }
-
-            if (!isTriggered) return false;
-
-            let extendedEndTime = p.endTime;
-            const overlappingMains = pureMains.filter(m => m.showTime <= p.endTime + 2.0 && m.endTime >= p.showTime);
-            if (overlappingMains.length > 0) {
-                const maxMainEndTime = Math.max(...overlappingMains.map(m => m.endTime));
-                extendedEndTime = Math.max(p.endTime, maxMainEndTime);
-            }
-
-            return curTime <= extendedEndTime;
+        // 4.1 独立定位当前激活的副轨歌词 activeSub（完全解绑主乐句，完全按自身时间戳生命周期）
+        const subPhrases = parsedPhrases.filter(p => p.isSub && !p.isClearCmd);
+        const PRELOAD_WINDOW = 1.5; // 提前1.5秒半透明预备呈现
+        const activeSub = subPhrases.find(p => {
+            const appearTime = Math.max(0, p.showTime - PRELOAD_WINDOW);
+            return curTime >= appearTime && curTime <= p.endTime;
         });
 
         updateLayoutIfNeeded(maxMainRows, !!activeSub);

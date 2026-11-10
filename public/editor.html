@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
@@ -132,11 +132,55 @@
             background: #ece9d8; border: 2px outset #fff; padding: 12px; width: 420px;
             box-shadow: 4px 4px 12px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 10px; font-size: 12px;
         }
-        .modal-header { font-weight: bold; border-bottom: 1px solid #d4d0c8; padding-bottom: 4px; }
+        .modal-card-wide { width: 560px; }
+        .modal-header { font-weight: bold; border-bottom: 1px solid #d4d0c8; padding-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
         .modal-footer { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
         textarea.bulk-textarea {
             width: 100%; height: 220px; font-family: monospace; font-size: 12px; padding: 6px;
             border: 1px solid #7f9db9; background: #fff; resize: vertical; outline: none;
+        }
+
+        /* 颜色可视化选择器样式 */
+        .color-palette-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+            background: #f7f6f0; border: 1px solid #7f9db9; padding: 10px; border-radius: 3px;
+        }
+        .color-group {
+            display: flex; flex-direction: column; gap: 6px;
+            background: #fff; border: 1px solid #d4d0c8; padding: 8px; border-radius: 3px;
+        }
+        .color-group-title {
+            font-weight: bold; font-size: 11px; color: #000088; border-bottom: 1px dashed #ccc; padding-bottom: 3px;
+        }
+        .color-item-row {
+            display: flex; align-items: center; justify-content: space-between; font-size: 11px;
+        }
+        .color-item-row label { flex: 1; color: #333; }
+        .color-picker-wrap {
+            display: flex; align-items: center; gap: 4px;
+        }
+        .color-picker-wrap input[type="color"] {
+            -webkit-appearance: none; border: 1px solid #7f9db9; width: 24px; height: 20px; cursor: pointer; padding: 0; background: none;
+        }
+        .color-picker-wrap input[type="text"] {
+            width: 65px; height: 20px; font-family: monospace; font-size: 11px; text-transform: uppercase; padding: 1px 3px; border: 1px solid #7f9db9;
+        }
+        .color-preset-bar {
+            display: flex; align-items: center; gap: 6px; font-size: 11px; flex-wrap: wrap; padding: 2px 0;
+        }
+        .color-preview-stage {
+            background: #000; border: 1px solid #333; border-radius: 4px; padding: 12px; text-align: center;
+            display: flex; flex-direction: column; gap: 8px; justify-content: center; align-items: center; min-height: 80px;
+        }
+        .preview-text-box {
+            font-size: 26px; font-weight: 900; letter-spacing: 1px; font-family: "Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif;
+            display: flex; align-items: flex-end; justify-content: center; gap: 16px;
+        }
+        .preview-sample-span {
+            position: relative; display: inline-block; line-height: 1.1;
+        }
+        .color-code-display {
+            font-family: monospace; font-size: 12px; background: #fff; border: 1px solid #7f9db9; padding: 4px 6px; user-select: all;
         }
     </style>
 </head>
@@ -240,7 +284,10 @@
     <!-- 歌词一括入力弹窗 -->
     <div class="modal-overlay" id="bulkInputModal">
         <div class="modal-card">
-            <div class="modal-header">歌詞テキストの一括入力 / 挿入 (方案B: 按行/词分行)</div>
+            <div class="modal-header">
+                <span>歌詞テキストの一括入力 / 挿入 (方案B: 按行/词分行)</span>
+                <span style="cursor: pointer; font-size: 14px;" onclick="closeBulkInputModal()">✕</span>
+            </div>
             <div style="font-size: 11px; color: #444;">
                 直接粘贴整首纯歌词。每一行将被作为一个句/词块，行尾自动补充换行符「/」。打轴时可通过 Enter 顺次打点推进。
             </div>
@@ -249,6 +296,130 @@
                 <button class="btn-tool" onclick="applyBulkInput(false)">追加挿入</button>
                 <button class="btn-tool" onclick="applyBulkInput(true)">全置換</button>
                 <button class="btn-tool" onclick="closeBulkInputModal()">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 视觉化色彩指定选择器弹窗 (Color Tag Studio) -->
+    <div class="modal-overlay" id="colorPickerModal">
+        <div class="modal-card modal-card-wide">
+            <div class="modal-header">
+                <span>カラータグ設定 (<color> Tag Designer)</span>
+                <span style="cursor: pointer; font-size: 14px;" onclick="closeColorPickerModal()">✕</span>
+            </div>
+            
+            <!-- 实时黑色背景预览区 -->
+            <div class="color-preview-stage">
+                <div style="font-size: 11px; color: #888; margin-bottom: 4px;">プレビュー (黒背景・Karaoke Preview)</div>
+                <div class="preview-text-box">
+                    <!-- 未唱状态 (Before) -->
+                    <div style="text-align: center;">
+                        <ruby style="ruby-position: over; text-align: center;">
+                            <span id="previewMainBefore" style="font-size: 26px; font-weight: 900; white-space: pre;">未唱歌詞</span>
+                            <rt id="previewRubyBefore" style="font-size: 13px; font-weight: bold; line-height: 1.0;">ルビ</rt>
+                        </ruby>
+                        <div style="font-size: 10px; color: #aaa; margin-top: 4px;">[未唱状態]</div>
+                    </div>
+
+                    <!-- 已唱状态 (After) -->
+                    <div style="text-align: center;">
+                        <ruby style="ruby-position: over; text-align: center;">
+                            <span id="previewMainAfter" style="font-size: 26px; font-weight: 900; white-space: pre;">既唱歌詞</span>
+                            <rt id="previewRubyAfter" style="font-size: 13px; font-weight: bold; line-height: 1.0;">ルビ</rt>
+                        </ruby>
+                        <div style="font-size: 10px; color: #aaa; margin-top: 4px;">[既唱状態]</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 常用经典预设快速选择 -->
+            <div class="color-preset-bar">
+                <span style="font-weight: bold; color: #333;">プリセット:</span>
+                <button class="btn-tool" onclick="applyColorPreset('default')">デフォルト (JoyHack白/水/赤)</button>
+                <button class="btn-tool" onclick="applyColorPreset('duet_female')">女性・ピンク系</button>
+                <button class="btn-tool" onclick="applyColorPreset('duet_male')">男性・ブルー系</button>
+                <button class="btn-tool" onclick="applyColorPreset('sub_chorus')">コーラス・金色/黄系</button>
+                <button class="btn-tool" onclick="applyColorPreset('high_contrast')">高コントラスト (白/黒/青)</button>
+            </div>
+
+            <!-- 色彩输入配置面板 (8 参数完整定义) -->
+            <div class="color-palette-grid">
+                <!-- 左列: 本文色彩 (Main Text) -->
+                <div class="color-group">
+                    <div class="color-group-title">本文 歌詞フォント (Main Text)</div>
+                    <div class="color-item-row">
+                        <label>未唱 塗り (Fill Before):</label>
+                        <div class="color-picker-wrap">
+                            <input type="color" id="cp_fillBefore" oninput="syncColorInput('fillBefore', this.value)">
+                            <input type="text" id="txt_fillBefore" maxlength="6" oninput="syncHexInput('fillBefore', this.value)">
+                        </div>
+                    </div>
+                    <div class="color-item-row">
+                        <label>未唱 縁 (Edge Before):</label>
+                        <div class="color-picker-wrap">
+                            <input type="color" id="cp_edgeBefore" oninput="syncColorInput('edgeBefore', this.value)">
+                            <input type="text" id="txt_edgeBefore" maxlength="6" oninput="syncHexInput('edgeBefore', this.value)">
+                        </div>
+                    </div>
+                    <div class="color-item-row">
+                        <label>既唱 塗り (Fill After):</label>
+                        <div class="color-picker-wrap">
+                            <input type="color" id="cp_fillAfter" oninput="syncColorInput('fillAfter', this.value)">
+                            <input type="text" id="txt_fillAfter" maxlength="6" oninput="syncHexInput('fillAfter', this.value)">
+                        </div>
+                    </div>
+                    <div class="color-item-row">
+                        <label>既唱 縁 (Edge After):</label>
+                        <div class="color-picker-wrap">
+                            <input type="color" id="cp_edgeAfter" oninput="syncColorInput('edgeAfter', this.value)">
+                            <input type="text" id="txt_edgeAfter" maxlength="6" oninput="syncHexInput('edgeAfter', this.value)">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右列: 注音色彩 (Ruby Text) -->
+                <div class="color-group">
+                    <div class="color-group-title">ルビ 注音フォント (Ruby Text)</div>
+                    <div class="color-item-row">
+                        <label>未唱 塗り (Ruby Fill Before):</label>
+                        <div class="color-picker-wrap">
+                            <input type="color" id="cp_rubyFillBefore" oninput="syncColorInput('rubyFillBefore', this.value)">
+                            <input type="text" id="txt_rubyFillBefore" maxlength="6" oninput="syncHexInput('rubyFillBefore', this.value)">
+                        </div>
+                    </div>
+                    <div class="color-item-row">
+                        <label>未唱 縁 (Ruby Edge Before):</label>
+                        <div class="color-picker-wrap">
+                            <input type="color" id="cp_rubyEdgeBefore" oninput="syncColorInput('rubyEdgeBefore', this.value)">
+                            <input type="text" id="txt_rubyEdgeBefore" maxlength="6" oninput="syncHexInput('rubyEdgeBefore', this.value)">
+                        </div>
+                    </div>
+                    <div class="color-item-row">
+                        <label>既唱 塗り (Ruby Fill After):</label>
+                        <div class="color-picker-wrap">
+                            <input type="color" id="cp_rubyFillAfter" oninput="syncColorInput('rubyFillAfter', this.value)">
+                            <input type="text" id="txt_rubyFillAfter" maxlength="6" oninput="syncHexInput('rubyFillAfter', this.value)">
+                        </div>
+                    </div>
+                    <div class="color-item-row">
+                        <label>既唱 縁 (Ruby Edge After):</label>
+                        <div class="color-picker-wrap">
+                            <input type="color" id="cp_rubyEdgeAfter" oninput="syncColorInput('rubyEdgeAfter', this.value)">
+                            <input type="text" id="txt_rubyEdgeAfter" maxlength="6" oninput="syncHexInput('rubyEdgeAfter', this.value)">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 生成的标签预览代码 -->
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-weight: bold; color: #333; font-size: 11px;">生成タグ:</span>
+                <input type="text" class="color-code-display" id="generatedColorTag" style="flex: 1;" readonly>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn-tool" onclick="confirmInsertColorTag()" style="font-weight: bold; color: #000088;">カーソル位置に挿入</button>
+                <button class="btn-tool" onclick="closeColorPickerModal()">キャンセル</button>
             </div>
         </div>
     </div>
@@ -1096,6 +1267,146 @@
     }
 
     /**
+     * 视觉化色彩设计器模块 (Color Tag Studio)
+     */
+    const currentColorState = {
+        fillBefore: 'FFFFFF',
+        edgeBefore: '000000',
+        fillAfter: 'FF8080',
+        edgeAfter: 'FFFFFF',
+        rubyFillBefore: 'FFFFFF',
+        rubyEdgeBefore: '000000',
+        rubyFillAfter: 'FF8080',
+        rubyEdgeAfter: 'FFFFFF'
+    };
+
+    const COLOR_PRESETS = {
+        default: {
+            fillBefore: 'FFFFFF', edgeBefore: '000000', fillAfter: '00FFFF', edgeAfter: '000088',
+            rubyFillBefore: 'FFFFFF', rubyEdgeBefore: '000000', rubyFillAfter: '00FFFF', rubyEdgeAfter: '000088'
+        },
+        duet_female: {
+            fillBefore: 'FFFFFF', edgeBefore: 'FF8080', fillAfter: 'FF8080', edgeAfter: 'FFFFFF',
+            rubyFillBefore: 'FFFFFF', rubyEdgeBefore: 'FF8080', rubyFillAfter: 'FF8080', rubyEdgeAfter: 'FFFFFF'
+        },
+        duet_male: {
+            fillBefore: 'FFFFFF', edgeBefore: '0080FF', fillAfter: '00FFFF', edgeAfter: '0000FF',
+            rubyFillBefore: 'FFFFFF', rubyEdgeBefore: '0080FF', rubyFillAfter: '00FFFF', rubyEdgeAfter: '0000FF'
+        },
+        sub_chorus: {
+            fillBefore: 'FFFFFF', edgeBefore: '808000', fillAfter: 'FFFF00', edgeAfter: 'FF8000',
+            rubyFillBefore: 'FFFFFF', rubyEdgeBefore: '808000', rubyFillAfter: 'FFFF00', rubyEdgeAfter: 'FF8000'
+        },
+        high_contrast: {
+            fillBefore: 'FFFFFF', edgeBefore: '000000', fillAfter: '0080FF', edgeAfter: 'FFFFFF',
+            rubyFillBefore: 'FFFFFF', rubyEdgeBefore: '000000', rubyFillAfter: '0080FF', rubyEdgeAfter: 'FFFFFF'
+        }
+    };
+
+    function openColorPickerModal() {
+        // 如果当前选中的单元格已经存在 <color> 标签，则自动提取并反显到设计器中
+        let targetText = "";
+        if (lastActiveEditable) {
+            targetText = lastActiveEditable.innerText;
+        } else if (tableData[selectedIndex]) {
+            targetText = tableData[selectedIndex].lyric;
+        }
+        const colorMatch = targetText.match(/<color>([^<\t\r\n]+)/);
+        if (colorMatch) {
+            const parts = colorMatch[1].split(',').map(s => s.trim().toUpperCase());
+            const keys = ['fillBefore', 'edgeBefore', 'fillAfter', 'edgeAfter', 'rubyFillBefore', 'rubyEdgeBefore', 'rubyFillAfter', 'rubyEdgeAfter'];
+            parts.forEach((val, i) => {
+                if (keys[i] && /^[0-9A-F]{6}$/i.test(val)) {
+                    currentColorState[keys[i]] = val;
+                }
+            });
+        }
+        refreshColorPickerUI();
+        document.getElementById('colorPickerModal').classList.add('show');
+    }
+
+    function closeColorPickerModal() {
+        document.getElementById('colorPickerModal').classList.remove('show');
+    }
+
+    function refreshColorPickerUI() {
+        const keys = ['fillBefore', 'edgeBefore', 'fillAfter', 'edgeAfter', 'rubyFillBefore', 'rubyEdgeBefore', 'rubyFillAfter', 'rubyEdgeAfter'];
+        keys.forEach(key => {
+            const hex = (currentColorState[key] || 'FFFFFF').toUpperCase().padStart(6, '0');
+            const cp = document.getElementById(`cp_${key}`);
+            const txt = document.getElementById(`txt_${key}`);
+            if (cp) cp.value = `#${hex}`;
+            if (txt) txt.value = hex;
+        });
+
+        updateColorPreview();
+    }
+
+    function syncColorInput(key, colorHexWithHash) {
+        const cleanHex = colorHexWithHash.replace('#', '').toUpperCase();
+        currentColorState[key] = cleanHex;
+        const txt = document.getElementById(`txt_${key}`);
+        if (txt) txt.value = cleanHex;
+        updateColorPreview();
+    }
+
+    function syncHexInput(key, hexVal) {
+        const cleanHex = hexVal.replace(/[^0-9A-Fa-f]/g, '').toUpperCase().slice(0, 6);
+        if (cleanHex.length === 6) {
+            currentColorState[key] = cleanHex;
+            const cp = document.getElementById(`cp_${key}`);
+            if (cp) cp.value = `#${cleanHex}`;
+            updateColorPreview();
+        }
+    }
+
+    function applyColorPreset(presetKey) {
+        const p = COLOR_PRESETS[presetKey];
+        if (p) {
+            Object.assign(currentColorState, p);
+            refreshColorPickerUI();
+        }
+    }
+
+    function makeTextStroke(color) {
+        return `-1.5px -1.5px 0 #${color}, 1.5px -1.5px 0 #${color}, -1.5px 1.5px 0 #${color}, 1.5px 1.5px 0 #${color}, -2px 0 0 #${color}, 2px 0 0 #${color}, 0 -2px 0 #${color}, 0 2px 0 #${color}`;
+    }
+
+    function updateColorPreview() {
+        const pmb = document.getElementById('previewMainBefore');
+        const prb = document.getElementById('previewRubyBefore');
+        const pma = document.getElementById('previewMainAfter');
+        const pra = document.getElementById('previewRubyAfter');
+
+        if (pmb) {
+            pmb.style.color = `#${currentColorState.fillBefore}`;
+            pmb.style.textShadow = makeTextStroke(currentColorState.edgeBefore);
+        }
+        if (prb) {
+            prb.style.color = `#${currentColorState.rubyFillBefore}`;
+            prb.style.textShadow = makeTextStroke(currentColorState.rubyEdgeBefore);
+        }
+        if (pma) {
+            pma.style.color = `#${currentColorState.fillAfter}`;
+            pma.style.textShadow = makeTextStroke(currentColorState.edgeAfter);
+        }
+        if (pra) {
+            pra.style.color = `#${currentColorState.rubyFillAfter}`;
+            pra.style.textShadow = makeTextStroke(currentColorState.rubyEdgeAfter);
+        }
+
+        const tagStr = `<color>${currentColorState.fillBefore},${currentColorState.edgeBefore},${currentColorState.fillAfter},${currentColorState.edgeAfter},${currentColorState.rubyFillBefore},${currentColorState.rubyEdgeBefore},${currentColorState.rubyFillAfter},${currentColorState.rubyEdgeAfter}`;
+        const disp = document.getElementById('generatedColorTag');
+        if (disp) disp.value = tagStr;
+    }
+
+    function confirmInsertColorTag() {
+        const tagStr = document.getElementById('generatedColorTag').value || `<color>${currentColorState.fillBefore},${currentColorState.edgeBefore},${currentColorState.fillAfter},${currentColorState.edgeAfter},${currentColorState.rubyFillBefore},${currentColorState.rubyEdgeBefore},${currentColorState.rubyFillAfter},${currentColorState.rubyEdgeAfter}`;
+        closeColorPickerModal();
+        insertTagAtCursor(tagStr);
+    }
+
+    /**
      * 响应主进程菜单命令
      */
     ipcRenderer.on('EDITOR_CMD', (event, cmd) => {
@@ -1114,7 +1425,9 @@
         } else if (cmd === 'TAG_CLEAR') {
             insertTagAtCursor('<clear>');
         } else if (cmd === 'TAG_COLOR') {
-            insertTagAtCursor('<color>FFFFFF,FF8080,FF8080,FFFFFF,FFFFFF,000000,000000,FFFFFF');
+            openColorPickerModal();
+        } else if (cmd === 'TAG_SUB') {
+            insertTagAtCursor('<sub>');
         } else if (cmd === 'TAG_IMAGE') {
             insertTagAtCursor('<image>');
         } else if (cmd === 'TAG_SKIP') {

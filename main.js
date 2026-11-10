@@ -1,4 +1,4 @@
-﻿const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const http = require('http');
 const express = require('express');
@@ -608,6 +608,7 @@ function batchFixSongsDirectory(songsDir, parentWin) {
             submenu: [
                 { label: '<clear>', accelerator: 'CmdOrCtrl+Alt+C', click: () => editorWindow.webContents.send('EDITOR_CMD', 'TAG_CLEAR') },
                 { label: '<color>', accelerator: 'CmdOrCtrl+Alt+O', click: () => editorWindow.webContents.send('EDITOR_CMD', 'TAG_COLOR') },
+                { label: '<sub>', accelerator: 'CmdOrCtrl+Alt+B', click: () => editorWindow.webContents.send('EDITOR_CMD', 'TAG_SUB') },
                 { label: '<image>', accelerator: 'CmdOrCtrl+Alt+I', click: () => editorWindow.webContents.send('EDITOR_CMD', 'TAG_IMAGE') },
                 { label: '<skip>', accelerator: 'CmdOrCtrl+Alt+S', click: () => editorWindow.webContents.send('EDITOR_CMD', 'TAG_SKIP') }
             ]

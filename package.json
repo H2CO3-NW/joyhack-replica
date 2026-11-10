@@ -1,6 +1,6 @@
 {
   "name": "joyhack-replica",
-  "version": "0.8.5",
+  "version": "0.8.8",
   "description": "JoyHack Karaoke Player Engine and Web Server",
   "main": "main.js",
   "scripts": {
