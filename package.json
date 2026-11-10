@@ -26,22 +26,18 @@
     },
     "files": [
       "**/*",
-      "!dist/*"
-    ],
-    "extraResources": [
-      {
-        "from": "Songs",
-        "to": "Songs",
-        "filter": [
-          "**/*"
-        ]
-      }
+      "!dist/*",
+      "!Songs/**/*",
+      "!server-stable.js",
+      "!public/admin-stable.html"
     ],
     "win": {
       "target": [
-        "nsis",
+        "zip",
         "portable"
-      ]
+      ],
+      "sign": null,
+      "verifyUpdateCodeSignature": false
     },
     "nsis": {
       "oneClick": false,
