@@ -73,8 +73,8 @@
             font-size: 12px;
         }
         .col-time { width: 110px; font-family: "Consolas", monospace; text-align: center; }
-        .col-lyric { width: auto; font-family: "Meiryo", "MS UI Gothic", sans-serif; }
-        .col-ruby { width: 130px; font-family: "Meiryo", sans-serif; }
+        .col-lyric { width: auto; font-family: "Meiryo", "MS UI Gothic", sans-serif; white-space: pre-wrap; }
+        .col-ruby { width: 130px; font-family: "Meiryo", sans-serif; white-space: pre-wrap; }
 
         tbody tr.selected { 
             background-color: #0078d7 !important; color: #fff !important; 
@@ -501,23 +501,24 @@
     }
 
     /**
-     * JoyHack 60fps 帧时间戳转换体系 (mm:ss:ff)
+     * JoyHack / RecENT 60fps 帧时间戳转换体系 (mm:ss:ff)
      */
     function secondsToTimeCode(sec) {
         if (isNaN(sec) || sec < 0) sec = 0;
-        const m = Math.floor(sec / 60).toString().padStart(2, '0');
-        const s = Math.floor(sec % 60).toString().padStart(2, '0');
-        const ff = Math.floor((sec % 1) * 60).toString().padStart(2, '0');
-        return `${m}:${s}:${ff}`;
+        const m = Math.floor(sec / 60);
+        const s = Math.floor(sec % 60);
+        const part1 = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+        const ff = Math.floor((sec * 60) % 60);
+        return `${part1}:${String(ff).padStart(2, '0')}`;
     }
 
     function timeCodeToSeconds(tcStr) {
         if (!tcStr) return 0;
         const parts = tcStr.trim().split(':');
         if (parts.length < 3) return 0;
-        const m = parseInt(parts[0], 10) || 0;
-        const s = parseInt(parts[1], 10) || 0;
-        const ff = parseInt(parts[2], 10) || 0;
+        const m = parseFloat(parts[0]) || 0;
+        const s = parseFloat(parts[1]) || 0;
+        const ff = parseFloat(parts[2]) || 0;
         return m * 60 + s + (ff / 60.0);
     }
 
@@ -556,7 +557,7 @@
                 updateSelectedRowStyle();
             };
             tdLyric.onblur = () => {
-                updateRowData(index, 'lyric', tdLyric.innerText);
+                updateRowData(index, 'lyric', tdLyric.textContent);
             };
             tdLyric.onkeydown = (e) => handleLyricCellKeyDown(e, index, tdLyric);
 
@@ -570,7 +571,7 @@
                 updateSelectedRowStyle();
             };
             tdRuby.onblur = () => {
-                updateRowData(index, 'ruby', tdRuby.innerText);
+                updateRowData(index, 'ruby', tdRuby.textContent);
             };
             tdRuby.onkeydown = (e) => handleRubyCellKeyDown(e, index, tdRuby);
 
@@ -633,7 +634,7 @@
             cell.onblur = null;
             const sel = window.getSelection();
             let cursorPos = 0;
-            let fullText = cell.innerText;
+            let fullText = cell.textContent;
             if (sel.rangeCount > 0) {
                 const range = sel.getRangeAt(0);
                 const preCaretRange = range.cloneRange();
@@ -669,7 +670,7 @@
 
             const sel = window.getSelection();
             let cursorPos = 0;
-            let fullText = cell.innerText.replace(/\r\n|\r|\n/g, '');
+            let fullText = cell.textContent.replace(/\r\n|\r|\n/g, '');
             if (sel.rangeCount > 0) {
                 const range = sel.getRangeAt(0);
                 const preCaretRange = range.cloneRange();
@@ -702,7 +703,7 @@
         if (e.key === 'ArrowUp') {
             if (index > 0) {
                 e.preventDefault();
-                tableData[index].lyric = cell.innerText.replace(/\r\n|\r|\n/g, '');
+                tableData[index].lyric = cell.textContent.replace(/\r\n|\r|\n/g, '');
                 selectedIndex = index - 1;
                 renderTable(true, { index: index - 1, field: 'lyric', atEnd: true });
             }
@@ -711,7 +712,7 @@
         if (e.key === 'ArrowDown') {
             if (index < tableData.length - 1) {
                 e.preventDefault();
-                tableData[index].lyric = cell.innerText.replace(/\r\n|\r|\n/g, '');
+                tableData[index].lyric = cell.textContent.replace(/\r\n|\r|\n/g, '');
                 selectedIndex = index + 1;
                 renderTable(true, { index: index + 1, field: 'lyric', atEnd: true });
             }
@@ -725,7 +726,7 @@
     function handleRubyCellKeyDown(e, index, cell) {
         if (e.key === 'Enter') {
             e.preventDefault();
-            tableData[index].ruby = cell.innerText.trim();
+            tableData[index].ruby = cell.textContent.replace(/\r\n|\r|\n/g, '');
             if (index < tableData.length - 1) {
                 selectedIndex = index + 1;
                 renderTable(true, { index: index + 1, field: 'ruby', atEnd: true });
@@ -735,7 +736,7 @@
         if (e.key === 'ArrowUp') {
             if (index > 0) {
                 e.preventDefault();
-                tableData[index].ruby = cell.innerText.trim();
+                tableData[index].ruby = cell.textContent.replace(/\r\n|\r|\n/g, '');
                 selectedIndex = index - 1;
                 renderTable(true, { index: index - 1, field: 'ruby', atEnd: true });
             }
@@ -744,7 +745,7 @@
         if (e.key === 'ArrowDown') {
             if (index < tableData.length - 1) {
                 e.preventDefault();
-                tableData[index].ruby = cell.innerText.trim();
+                tableData[index].ruby = cell.textContent.replace(/\r\n|\r|\n/g, '');
                 selectedIndex = index + 1;
                 renderTable(true, { index: index + 1, field: 'ruby', atEnd: true });
             }
@@ -759,7 +760,7 @@
 
     function updateRowData(index, field, val) {
         if (tableData[index]) {
-            tableData[index][field] = val.trim();
+            tableData[index][field] = (val || '').replace(/\r\n|\r|\n/g, '');
             markDirty();
         }
     }
@@ -1009,8 +1010,8 @@
             if (line.includes('\t')) {
                 const parts = line.split('\t');
                 parts.forEach(p => {
-                    p = p.trim();
-                    if (p) newRows.push({ time: "", lyric: p, ruby: "" });
+                    const cleanP = p.replace(/\r\n|\r|\n/g, '');
+                    if (cleanP) newRows.push({ time: "", lyric: cleanP, ruby: "" });
                 });
                 newRows.push({ time: "", lyric: "/", ruby: "" });
             } else {
@@ -1036,57 +1037,46 @@
     }
 
     /**
-     * JoyHack 歌词文件序列化生成 (以 UTF-8 带 BOM 输出)
+     * JoyHack 歌词文件序列化生成 (以 UTF-8 带 BOM 输出，与 RecENT writeToFile 完全对齐)
      */
     function generateOutputContent() {
-        let output = `<version>${rawHeaderMeta.version || '2.1.0'}\n`;
-        output += `<title>${document.getElementById('metaTitle').value}\n`;
-        output += `<lyrics>${document.getElementById('metaLyrics').value}\n`;
-        output += `<music>${document.getElementById('metaMusic').value}\n`;
-        output += `<singer>${document.getElementById('metaSinger').value}\n`;
-        output += `<works>${document.getElementById('metaWorks').value}\n`;
-        output += `<render>${rawHeaderMeta.render || ''}\n`;
-        output += `<year>${document.getElementById('metaYear').value}\n`;
-        output += `<author>${document.getElementById('metaAuthor').value}\n`;
-        output += `<timeCodeFix>${document.getElementById('metaFix').value || '-00:00:00'}\n`;
-        output += `<searchKey>${document.getElementById('metaKana').value}\n`;
-        output += `<titleimage>${rawHeaderMeta.titleimage || document.getElementById('metaExtraTitle').value || ''}\n`;
-        output += `<source>${document.getElementById('metaSource').value}\n`;
+        let output = `<version>${rawHeaderMeta.version || '2.1.0'}\r\n`;
+        output += `<title>${document.getElementById('metaTitle').value}\r\n`;
+        output += `<lyrics>${document.getElementById('metaLyrics').value}\r\n`;
+        output += `<music>${document.getElementById('metaMusic').value}\r\n`;
+        output += `<singer>${document.getElementById('metaSinger').value}\r\n`;
+        output += `<works>${document.getElementById('metaWorks').value}\r\n`;
+        output += `<render>${rawHeaderMeta.render || ''}\r\n`;
+        output += `<year>${document.getElementById('metaYear').value}\r\n`;
+        output += `<author>${document.getElementById('metaAuthor').value}\r\n`;
+        output += `<timeCodeFix>${document.getElementById('metaFix').value || '-00:00:00'}\r\n`;
+        output += `<searchKey>${document.getElementById('metaKana').value}\r\n`;
+        output += `<titleimage>${rawHeaderMeta.titleimage || document.getElementById('metaExtraTitle').value || ''}\r\n`;
+        output += `<source>${document.getElementById('metaSource').value}\r\n`;
 
-        let currentWords = [];
-        let currentTimes = [];
+        let currentWords = "";
+        let currentTime = "";
 
         tableData.forEach(row => {
             if (row.lyric === '/') {
-                if (row.time) currentTimes.push(row.time);
-                let lineStr = currentWords.join('\t');
-                if (currentTimes.length > 0) {
-                    lineStr += '\t<time>\t' + currentTimes.join('\t');
-                } else {
-                    lineStr += '\t<time>\t';
-                }
-                output += lineStr + '\n';
-                currentWords = [];
-                currentTimes = [];
+                currentTime += (row.time || '');
+                if (row.extraTime) currentTime += '\t' + row.extraTime;
+                output += currentWords + '<time>' + currentTime + '\r\n';
+                currentWords = "";
+                currentTime = "";
             } else {
-                let w = row.lyric === "" ? " " : row.lyric;
+                let w = row.lyric || '';
                 // 如果有 ruby 标注，拼接成 漢字<ruby>ルビ
                 if (row.ruby && row.ruby.trim()) {
                     w += `<ruby>${row.ruby.trim()}`;
                 }
-                currentWords.push(w);
-                if (row.time) currentTimes.push(row.time);
+                currentWords += w + '\t';
+                currentTime += (row.time || '') + '\t';
             }
         });
 
-        if (currentWords.length > 0 || currentTimes.length > 0) {
-            let lineStr = currentWords.join('\t');
-            if (currentTimes.length > 0) {
-                lineStr += '\t<time>\t' + currentTimes.join('\t');
-            } else {
-                lineStr += '\t<time>\t';
-            }
-            output += lineStr + '\n';
+        if (currentWords !== "" || currentTime !== "") {
+            output += currentWords + '<time>' + currentTime + '\r\n';
         }
 
         return output;
@@ -1148,7 +1138,7 @@
     }
 
     /**
-     * 读取与反解现有 JoyHack 歌词文件
+     * 读取与反解现有 JoyHack 歌词文件 (完全对齐 RecENT fileOpen / mainSearch 逻辑)
      */
     function parseJoyHackText(text, filePath = "", fileName = "") {
         currentFilePath = filePath;
@@ -1190,74 +1180,58 @@
             }
         }
 
-        let lyricStream = text;
-        const tagsToRemove = ['version', 'title', 'lyrics', 'music', 'singer', 'works', 'render', 'year', 'author', 'timeCodeFix', 'searchKey', 'titleimage', 'source'];
-        tagsToRemove.forEach(tag => {
-            const regex = new RegExp(`<${tag}>[^\\r\\n]*[\\r\\n]*`, 'gi');
-            lyricStream = lyricStream.replace(regex, '');
-        });
-
-        const lines = lyricStream.split(/[\r\n]+/);
+        const lines = text.split(/\r?\n/).filter(l => l.includes('<time>'));
         lines.forEach(line => {
-            if (!line.trim() && !line.includes('\t')) return;
-
-            const parts = line.split('<time>');
-            const wordsPart = parts[0];
-            const timesPart = parts[1] || '';
-
-            const times = timesPart.match(/\d{2}:\d{2}:\d{2}/g) || [];
-
-            let rawWords = wordsPart.split('\t');
-            while (rawWords.length > 0 && rawWords[rawWords.length - 1] === '') {
-                rawWords.pop();
+            const timeSplit = line.split('<time>');
+            let wordsArr = [];
+            let timesArr = [];
+            if (timeSplit[0] === '') {
+                wordsArr = [];
+            } else if (timeSplit.length === 1) {
+                wordsArr = (timeSplit[0] + '\t').split('\t');
+                timesArr = [];
+            } else {
+                wordsArr = timeSplit[0].split('\t');
+                timesArr = timeSplit[1].split('\t');
             }
 
-            if (times.length > 0) {
-                const maxLen = Math.max(rawWords.length, times.length);
-                for (let i = 0; i < maxLen; i++) {
-                    let timeVal = times[i] || "";
-                    let lyricVal = "";
-                    let rubyVal = "";
-
-                    if (i < rawWords.length) {
-                        let w = rawWords[i];
-                        if (w.includes('<ruby>')) {
-                            const rubyMatch = w.match(/(.*?)<ruby>(.*)/i);
-                            if (rubyMatch) {
-                                lyricVal = rubyMatch[1];
-                                rubyVal = rubyMatch[2];
+            for (let j = 0; j < wordsArr.length; j++) {
+                const wordToken = wordsArr[j];
+                if (wordToken.length > 0) {
+                    const angleParts = wordToken.split('<');
+                    let wordVal = '';
+                    let rubyVal = '';
+                    if (angleParts.length > 1) {
+                        wordVal = angleParts[0];
+                        for (let k = 1; k < angleParts.length; k++) {
+                            const ap = angleParts[k];
+                            if (ap.startsWith('ruby>')) {
+                                rubyVal = ap.substring(5);
                             } else {
-                                lyricVal = w;
+                                wordVal += '<' + ap;
                             }
-                        } else {
-                            lyricVal = (w === ' ' || w === '　') ? "" : w;
                         }
                     } else {
-                        lyricVal = "/";
+                        wordVal = wordToken;
                     }
-
-                    tableData.push({ time: timeVal, lyric: lyricVal, ruby: rubyVal });
+                    const timeVal = (j < timesArr.length) ? timesArr[j] : '';
+                    tableData.push({ time: timeVal, lyric: wordVal, ruby: rubyVal });
+                } else {
+                    if (j === wordsArr.length - 1) {
+                        const timeVal = (j < timesArr.length) ? timesArr[j] : '';
+                        const extraTime = (j + 1 < timesArr.length) ? timesArr[j + 1] : '';
+                        tableData.push({ time: timeVal, lyric: '/', ruby: '', extraTime: extraTime });
+                    } else {
+                        const timeVal = (j < timesArr.length) ? timesArr[j] : '';
+                        tableData.push({ time: timeVal, lyric: '', ruby: '' });
+                    }
                 }
-            } else {
-                rawWords.forEach(w => {
-                    let lyricVal = (w === ' ' || w === '　') ? "" : w;
-                    let rubyVal = "";
-                    if (lyricVal.includes('<ruby>')) {
-                        const rubyMatch = lyricVal.match(/(.*?)<ruby>(.*)/i);
-                        if (rubyMatch) {
-                            lyricVal = rubyMatch[1];
-                            rubyVal = rubyMatch[2];
-                        }
-                    }
-                    tableData.push({ time: "", lyric: lyricVal, ruby: rubyVal });
-                });
-                tableData.push({ time: "", lyric: "/", ruby: "" });
             }
         });
 
         if (tableData.length === 0) {
-            tableData.push({ time: "00:00:00", lyric: "<clear>", ruby: "" });
-            tableData.push({ time: "", lyric: "/", ruby: "" });
+            tableData.push({ time: "", lyric: "<clear>", ruby: "" });
+            tableData.push({ time: "00:00:00", lyric: "/", ruby: "" });
         }
         
         selectedIndex = 0;

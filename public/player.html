@@ -998,14 +998,40 @@
         return '';
     }
 
-    function timeCodeToSeconds(tcStr) {
-        const parts = tcStr.split(':');
-        return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10) + (parseInt(parts[2], 10) / 60.0);
+    function timeCodeToSeconds(tcStr, fixOffset = 0) {
+        if (!tcStr) return 0;
+        const parts = tcStr.trim().split(':');
+        if (parts.length < 3) return 0;
+        const m = parseFloat(parts[0]) || 0;
+        const s = parseFloat(parts[1]) || 0;
+        const ff = parseFloat(parts[2]) || 0;
+        return m * 60 + s + (ff / 60.0) + fixOffset;
     }
 
     function parseJoyHackLinearStream(text) {
         const lines = text.split(/[\r\n]+/);
         let activeLinesCount = 2;
+
+        // 解析 RecENT <timeCodeFix> 全局修正偏移量
+        let timeCodeFixVal = 0;
+        const fixMatch = text.match(/<timeCodeFix>([^\r\n]*)/i);
+        if (fixMatch && fixMatch[1]) {
+            const rawFix = fixMatch[1].trim();
+            if (rawFix.length === 9) {
+                const isNeg = rawFix.startsWith('-');
+                const tcSub = rawFix.substring(1);
+                const p = tcSub.split(':');
+                if (p.length === 3) {
+                    const s = (parseFloat(p[0]) * 60) + parseFloat(p[1]) + (parseFloat(p[2]) / 60.0);
+                    timeCodeFixVal = isNeg ? -s : s;
+                }
+            } else if (rawFix.length === 8) {
+                const p = rawFix.split(':');
+                if (p.length === 3) {
+                    timeCodeFixVal = (parseFloat(p[0]) * 60) + parseFloat(p[1]) + (parseFloat(p[2]) / 60.0);
+                }
+            }
+        }
 
         let mainColors = {
             fillBefore: '#FFFFFF', edgeBefore: '#000000', fillAfter: '#FF0033', edgeAfter: '#FFFFFF',
@@ -1051,7 +1077,7 @@
             const timeMatches = timePart.match(timeRegex);
             if (!timeMatches || timeMatches.length === 0) return;
 
-            const timeCodes = timeMatches.map(timeCodeToSeconds);
+            const timeCodes = timeMatches.map(t => timeCodeToSeconds(t, timeCodeFixVal));
             const showTime = timeCodes[0];
             const endTime = timeCodes[timeCodes.length - 1];
 
