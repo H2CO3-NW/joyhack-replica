@@ -3,43 +3,94 @@
 <head>
     <meta charset="UTF-8">
     <title>JoyHack Player Engine</title>
-    <script src="/socket.io/socket.io.js"></script>
+    <script src="libs/socket.io.min.js"></script>
+    <!-- 本地引入 Tone.js 用于 Phase Vocoder PitchShift 变调（离线支持） -->
+    <script src="libs/tone.min.js"></script>
+    <!-- 本地引入 QRCode.js 用于生成点歌地址二维码（离线支持） -->
+    <script src="libs/qrcode.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html, body { width: 100%; height: 100%; background-color: #000000; color: #fff; font-family: "Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif; overflow: hidden; }
         
-        #canvasBg { position: absolute; top:0; left:0; width: 100%; height: 100%; z-index: 1; }
+        #canvasBg { position: absolute; top:0; left:0; width: 100%; height: 100%; z-index: 1; display: block; pointer-events: none; }
         video { position: absolute; top:0; left:0; width: 100%; height: 100%; object-fit: contain; z-index: 2; background: transparent; }
         
         .hud { position: absolute; top: 20px; left: 20px; font-size: 24px; font-weight: bold; color: #00ffff; text-shadow: 0 0 10px #000; z-index: 10; pointer-events: none; }
         .song-info { position: absolute; top: 55px; left: 20px; font-size: 15px; color: #aaa; text-shadow: 0 0 5px #000; z-index: 10; }
 
+        /* Title Overlay 画面样式 */
+        .title-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 20; background-color: #0000ff; display: none;
+            flex-direction: column; justify-content: center; align-items: center;
+            padding: 40px; pointer-events: none;
+        }
+        .title-overlay.active { display: flex; pointer-events: auto; }
+        .title-overlay-img {
+            width: 100%; height: 100%; object-fit: contain; display: block;
+        }
+        .title-card-text {
+            display: flex; flex-direction: column; justify-content: center;
+            width: 100%; height: 100%; gap: 20px; color: #ffffff;
+            text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 4px 10px rgba(0,0,0,0.8);
+        }
+        .title-card-title {
+            font-size: 72px; font-weight: 900; line-height: 1.2;
+            word-break: break-word; color: #ffffff; width: 100%; text-align: center;
+        }
+        .title-card-credits {
+            font-size: 26px; font-weight: bold; line-height: 1.6; color: #ffffff; width: 100%; text-align: right;
+        }
+        .title-card-works {
+            font-size: 32px; font-weight: bold; margin-top: 10px; color: #ffffff; width: 100%; text-align: center;
+        }
+        .title-card-singer {
+            font-size: 52px; font-weight: 900; color: #ffffff; width: 100%; text-align: center;
+        }
+
+        /* 预览模式悬浮退出按钮 */
+        .exit-preview-btn {
+            position: absolute; top: 30px; right: 30px; z-index: 25;
+            background: rgba(0, 0, 0, 0.6); color: #00ffff; border: 1px solid #00ffff;
+            padding: 10px 20px; font-size: 16px; font-weight: bold; border-radius: 20px;
+            cursor: pointer; display: none; backdrop-filter: blur(5px);
+            transition: all 0.2s ease;
+        }
+        .exit-preview-btn:hover { background: rgba(0, 255, 255, 0.8); color: #000; }
+
         .karaoke-display { 
             position: absolute; bottom: 40px; left: 5%; width: 90%;
-            display: flex; flex-direction: column; justify-content: flex-end; gap: 12px;
+            display: flex; flex-direction: column; justify-content: flex-end; gap: 24px;
             z-index: 15; pointer-events: none; transition: height 0.2s ease;
         }
 
-        /* 核心修改：将 gap 设为 0px，消除逐字切分词块之间的强制空隙 */
         .lyric-row { 
-            font-size: 52px; font-weight: 900; letter-spacing: 2px;
-            height: 80px; line-height: 80px;
-            display: flex; align-items: flex-end; gap: 0px; transition: opacity 0.2s ease;
+            font-size: 0;
+            height: 90px; line-height: 90px;
+            width: 100%; white-space: nowrap; transition: opacity 0.2s ease;
         }
-        .row-align-left { justify-content: flex-start; }
-        .row-align-right { justify-content: flex-end; }
-        .row-sub { justify-content: center; font-size: 44px; } 
+        .row-align-left { text-align: left; }
+        .row-align-center { text-align: center; }
+        .row-align-right { text-align: right; }
+        .row-sub { text-align: center; } 
 
         ruby { ruby-position: over; text-align: center; }
         rt { font-size: 20px; font-weight: bold; line-height: 1.0; }
 
-        .karaoke-word-wrapper { position: relative; display: inline-block; line-height: 1.1; margin: 0; padding: 0; }
-        .karaoke-word-base { font-weight: 900; paint-order: stroke fill; }
+        .lyric-line-bg { display: inline-block; vertical-align: bottom; }
+        .karaoke-word-wrapper { 
+            position: relative; display: inline-block; line-height: 1.1; margin: 0; padding: 0; 
+            font-size: 52px; font-weight: 900; letter-spacing: 0px; white-space: pre;
+            vertical-align: bottom;
+        }
+        .row-sub .karaoke-word-wrapper { font-size: 44px; }
+
+        .karaoke-word-base { font-weight: 900; paint-order: stroke fill; white-space: pre; }
         .karaoke-word-active {
             position: absolute; top: 0; left: 0;
             font-weight: 900; paint-order: stroke fill;
             clip-path: polygon(0 0, var(--clip, 0%) 0, var(--clip, 0%) 100%, 0 100%);
-            will-change: clip-path; white-space: nowrap;
+            will-change: clip-path; white-space: pre;
         }
 
         .control-bar-trigger { position: absolute; bottom: 0; left: 0; width: 100%; height: 70px; z-index: 30; }
@@ -59,12 +110,112 @@
         .progress-bar { width: 0%; height: 100%; background: #00ffff; }
         .volume-container { display: flex; align-items: center; gap: 8px; color: #00ffff; font-size: 14px; }
         .volume-slider { width: 80px; accent-color: #00ffff; cursor: pointer; }
+
+        /* 模态框及 Tab 选项卡样式 */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7); z-index: 100; display: none;
+            justify-content: center; align-items: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-card {
+            background: #222; border: 1px solid #444; border-radius: 8px;
+            width: 720px; max-height: 90vh; padding: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.8);
+            position: relative; display: flex; flex-direction: column;
+        }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 15px; }
+        .modal-title { font-size: 18px; font-weight: bold; color: #00ffff; }
+        .modal-close { background: none; border: none; color: #aaa; font-size: 20px; cursor: pointer; }
+        .modal-close:hover { color: #fff; }
+
+        /* Tab 结构 */
+        .tab-nav { display: flex; gap: 5px; border-bottom: 1px solid #444; margin-bottom: 15px; }
+        .tab-btn {
+            background: #111; color: #888; border: 1px solid #444; border-bottom: none;
+            padding: 8px 16px; font-size: 13px; font-weight: bold; border-radius: 6px 6px 0 0;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .tab-btn.active { background: #333; color: #00ffff; border-color: #00ffff #00ffff #333 #00ffff; }
+
+        .tab-content { display: none; overflow-y: auto; max-height: 60vh; padding-right: 5px; }
+        .tab-content.active { display: block; }
+
+        .form-group { margin-bottom: 15px; }
+        .form-label { display: block; font-size: 13px; color: #ccc; margin-bottom: 6px; }
+        .input-group { display: flex; gap: 10px; align-items: center; }
+        .input-text { flex: 1; background: #111; border: 1px solid #444; border-radius: 4px; padding: 6px 10px; color: #00ffff; font-size: 13px; }
+        .input-number { width: 65px; background: #111; border: 1px solid #444; border-radius: 4px; padding: 6px; color: #00ffff; font-size: 13px; }
+        .input-color { width: 40px; height: 32px; border: none; background: none; cursor: pointer; }
+        .select-custom { background: #111; border: 1px solid #444; border-radius: 4px; padding: 6px; color: #00ffff; font-size: 13px; }
+
+        /* 二维码区域 */
+        .qrcode-box {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: #181818; border: 1px dashed #444; border-radius: 6px;
+            padding: 12px; margin-top: 10px; gap: 8px;
+        }
+        .qrcode-canvas-container {
+            background: #ffffff; padding: 8px; border-radius: 4px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .qrcode-tips { font-size: 12px; color: #aaa; }
+
+        .btn-browse { background: #00ffff; color: #000; border: none; padding: 6px 14px; font-weight: bold; border-radius: 4px; cursor: pointer; }
+        .btn-browse:hover { background: #00cccc; }
+        .btn-copy { background: #ffcc00; color: #000; border: none; padding: 6px 14px; font-weight: bold; border-radius: 4px; cursor: pointer; }
+        .btn-copy:hover { background: #e6b800; }
+        .btn-open-admin { width: 100%; background: #ff007f; color: #fff; border: none; padding: 10px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 14px; margin-top: 5px; }
+        .btn-open-admin:hover { background: #e00070; }
+
+        .style-grid { display: grid; grid-template-columns: 1.2fr 1fr 0.8fr 1fr; gap: 8px; align-items: center; background: #181818; padding: 10px; border-radius: 6px; margin-bottom: 12px; }
+        .style-grid-title { grid-column: span 4; font-size: 13px; font-weight: bold; color: #00ffff; border-bottom: 1px solid #333; padding-bottom: 4px; margin-bottom: 4px; }
+
+        .modal-footer { display: flex; justify-content: space-between; border-top: 1px solid #333; padding-top: 12px; margin-top: 15px; }
+        .btn-preview { background: #00ff66; color: #000; border: none; padding: 8px 20px; font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .btn-preview:hover { background: #00cc52; }
+        .btn-reset { background: #444; color: #fff; border: none; padding: 8px 16px; font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 13px; }
+        .btn-reset:hover { background: #555; }
+
+        #toastContainer { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+        .toast { background: rgba(0, 255, 255, 0.95); color: #000; padding: 12px 20px; font-weight: bold; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-size: 15px; opacity: 0; transform: translateY(-20px); transition: all 0.3s ease; }
+        .toast.show { opacity: 1; transform: translateY(0); }
+
+        /* 歌词设置实时预览容器 */
+        .lyric-preview-box {
+            margin-top: 15px;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            border: 1px solid #555;
+            border-radius: 8px;
+            padding: 30px 20px 20px;
+            min-height: 140px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .lyric-preview-tag {
+            position: absolute;
+            top: 6px;
+            left: 10px;
+            font-size: 11px;
+            color: #aaa;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
     </style>
 </head>
 <body>
+    <div id="toastContainer"></div>
     <canvas id="canvasBg"></canvas>
-    <video id="videoPlayer" style="display:none;"></video>
+    <video id="videoPlayer" style="display:none;" crossorigin="anonymous"></video>
+    <audio id="vocalAudio" style="display:none;" crossorigin="anonymous"></audio>
     
+    <!-- Title Overlay 画面 -->
+    <div class="title-overlay" id="titleOverlay"></div>
+    <button class="exit-preview-btn" id="exitPreviewBtn" onclick="exitTitlePreview()">✕ 退出预览</button>
+
     <div class="hud" id="hud">等待点歌... [状态: 停止]</div>
     <div class="song-info" id="songInfo"></div>
 
@@ -84,14 +235,231 @@
         </div>
     </div>
 
+    <!-- 选项 / 设置 弹窗 -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="modal-title">⚙ 选项 / 设置</div>
+                <button class="modal-close" onclick="closeSettingsModal()">✕</button>
+            </div>
+
+            <!-- Tab 导航栏 -->
+            <div class="tab-nav">
+                <button class="tab-btn active" onclick="switchTab('general')">常规设置</button>
+                <button class="tab-btn" onclick="switchTab('titleStyle')">歌曲元信息显示画面设定</button>
+                <button class="tab-btn" onclick="switchTab('lyricStyle')">歌词文本显示设置</button>
+            </div>
+
+            <!-- Tab 1: 常规设置 -->
+            <div class="tab-content active" id="tabGeneral">
+                <div class="form-group">
+                    <label class="form-label">曲库文件夹路径：</label>
+                    <div class="input-group">
+                        <input type="text" class="input-text" id="songsDirInput" readonly placeholder="正在获取曲库路径...">
+                        <button class="btn-browse" onclick="browseSongsDir()">浏览...</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">同一 Wi-Fi 下手机/设备点歌地址：</label>
+                    <div class="input-group">
+                        <input type="text" class="input-text" id="lanUrlInput" readonly placeholder="检测网络中...">
+                        <button class="btn-copy" onclick="copyLanUrl()">复制 URL</button>
+                    </div>
+                    <!-- 扫码点歌二维码展示区域 -->
+                    <div class="qrcode-box">
+                        <div class="qrcode-canvas-container" id="qrcodeContainer"></div>
+                        <div class="qrcode-tips">📱 使用 iPhone / 手机相机扫码即可快速打开点歌页面</div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">快捷操作：</label>
+                    <button class="btn-open-admin" onclick="openAdminWeb()">打开网页点歌后台 (http://localhost:3000/admin)</button>
+                </div>
+            </div>
+
+            <!-- Tab 2: Title 画面样式设定 -->
+            <div class="tab-content" id="tabTitleStyle">
+                <div class="form-group">
+                    <label class="form-label">Title 画面背景底色：</label>
+                    <div class="input-group">
+                        <input type="color" id="titleBgColorPicker" class="input-color" value="#0000ff" onchange="syncColorInput(this, 'titleBgColorText')">
+                        <input type="text" id="titleBgColorText" class="input-text" value="#0000ff" style="width: 100px;" onchange="syncColorPicker(this, 'titleBgColorPicker')">
+                    </div>
+                </div>
+
+                <!-- 曲名 (Title) 设定 -->
+                <div class="style-grid">
+                    <div class="style-grid-title">曲名 (Title)</div>
+                    <div>字体: 
+                        <select id="titleFontFamily" class="select-custom">
+                            <option value='"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif' selected>默认 (Gothic/YaHei)</option>
+                            <option value='"MS PGothic", "MS UI Gothic", sans-serif'>MS PGothic</option>
+                            <option value='"Meiryo", "メイリオ", sans-serif'>Meiryo</option>
+                            <option value='"Yu Gothic", "游ゴシック", sans-serif'>Yu Gothic</option>
+                            <option value='"Microsoft YaHei", "微软雅黑", sans-serif'>微软雅黑</option>
+                            <option value='sans-serif'>sans-serif (系统无衬线)</option>
+                        </select>
+                    </div>
+                    <div>字号: <input type="number" id="titleFontSize" class="input-number" value="72" min="20" max="150"></div>
+                    <div>颜色: <input type="color" id="titleColor" class="input-color" value="#ffffff"></div>
+                    <div>对齐: 
+                        <select id="titleAlign" class="select-custom">
+                            <option value="center" selected>居中</option>
+                            <option value="left">靠左</option>
+                            <option value="right">靠右</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 作词 / 作曲 (Credits) 设定 -->
+                <div class="style-grid">
+                    <div class="style-grid-title">作词 / 作曲 (Credits)</div>
+                    <div>字体: 
+                        <select id="creditsFontFamily" class="select-custom">
+                            <option value='"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif' selected>默认 (Gothic/YaHei)</option>
+                            <option value='"MS PGothic", "MS UI Gothic", sans-serif'>MS PGothic</option>
+                            <option value='"Meiryo", "メイリオ", sans-serif'>Meiryo</option>
+                            <option value='"Yu Gothic", "游ゴシック", sans-serif'>Yu Gothic</option>
+                            <option value='"Microsoft YaHei", "微软雅黑", sans-serif'>微软雅黑</option>
+                            <option value='sans-serif'>sans-serif (系统无衬线)</option>
+                        </select>
+                    </div>
+                    <div>字号: <input type="number" id="creditsFontSize" class="input-number" value="26" min="12" max="80"></div>
+                    <div>颜色: <input type="color" id="creditsColor" class="input-color" value="#ffffff"></div>
+                    <div>对齐: 
+                        <select id="creditsAlign" class="select-custom">
+                            <option value="right" selected>靠右</option>
+                            <option value="center">居中</option>
+                            <option value="left">靠左</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 出处 (Works) 设定 -->
+                <div class="style-grid">
+                    <div class="style-grid-title">出处 (Works)</div>
+                    <div>字体: 
+                        <select id="worksFontFamily" class="select-custom">
+                            <option value='"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif' selected>默认 (Gothic/YaHei)</option>
+                            <option value='"MS PGothic", "MS UI Gothic", sans-serif'>MS PGothic</option>
+                            <option value='"Meiryo", "メイリオ", sans-serif'>Meiryo</option>
+                            <option value='"Yu Gothic", "游ゴシック", sans-serif'>Yu Gothic</option>
+                            <option value='"Microsoft YaHei", "微软雅黑", sans-serif'>微软雅黑</option>
+                            <option value='sans-serif'>sans-serif (系统无衬线)</option>
+                        </select>
+                    </div>
+                    <div>字号: <input type="number" id="worksFontSize" class="input-number" value="32" min="12" max="100"></div>
+                    <div>颜色: <input type="color" id="worksColor" class="input-color" value="#ffffff"></div>
+                    <div>对齐: 
+                        <select id="worksAlign" class="select-custom">
+                            <option value="center" selected>居中</option>
+                            <option value="left">靠左</option>
+                            <option value="right">靠右</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 歌手名 (Singer) 设定 -->
+                <div class="style-grid">
+                    <div class="style-grid-title">歌手名 (Singer)</div>
+                    <div>字体: 
+                        <select id="singerFontFamily" class="select-custom">
+                            <option value='"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif' selected>默认 (Gothic/YaHei)</option>
+                            <option value='"MS PGothic", "MS UI Gothic", sans-serif'>MS PGothic</option>
+                            <option value='"Meiryo", "メイリオ", sans-serif'>Meiryo</option>
+                            <option value='"Yu Gothic", "游ゴシック", sans-serif'>Yu Gothic</option>
+                            <option value='"Microsoft YaHei", "微软雅黑", sans-serif'>微软雅黑</option>
+                            <option value='sans-serif'>sans-serif (系统无衬线)</option>
+                        </select>
+                    </div>
+                    <div>字号: <input type="number" id="singerFontSize" class="input-number" value="52" min="16" max="120"></div>
+                    <div>颜色: <input type="color" id="singerColor" class="input-color" value="#ffffff"></div>
+                    <div>对齐: 
+                        <select id="singerAlign" class="select-custom">
+                            <option value="center" selected>居中</option>
+                            <option value="left">靠左</option>
+                            <option value="right">靠右</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 3: 歌词文本显示设置 -->
+            <div class="tab-content" id="tabLyricStyle">
+                <div class="form-group" style="display: flex; align-items: center; gap: 10px; background: #181818; padding: 12px; border-radius: 6px;">
+                    <input type="checkbox" id="lyricBgEnabled" style="width: 18px; height: 18px; accent-color: #00ffff; cursor: pointer;" onchange="updateLyricStyleFromForm()">
+                    <label for="lyricBgEnabled" style="font-size: 14px; font-weight: bold; color: #00ffff; cursor: pointer; user-select: none;">启用歌词垫底背景（防止复杂背景MV遮挡干扰）</label>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">背景底色与透明度：</label>
+                    <div class="input-group" style="gap: 15px;">
+                        <input type="color" id="lyricBgColorPicker" class="input-color" value="#000000" onchange="syncColorInput(this, 'lyricBgColorText'); updateLyricStyleFromForm();">
+                        <input type="text" id="lyricBgColorText" class="input-text" value="#000000" style="width: 90px;" onchange="syncColorPicker(this, 'lyricBgColorPicker'); updateLyricStyleFromForm();">
+                        <span style="font-size: 13px; color: #ccc;">透明度:</span>
+                        <input type="range" id="lyricBgOpacitySlider" min="0" max="1" step="0.05" value="0.6" style="flex: 1; accent-color: #00ffff; cursor: pointer;" oninput="document.getElementById('lyricBgOpacityVal').innerText = Math.round(this.value * 100) + '%'; updateLyricStyleFromForm();">
+                        <span id="lyricBgOpacityVal" style="font-family: monospace; font-size: 13px; color: #00ffff; width: 45px;">60%</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">背景框圆角大小：</label>
+                    <div class="input-group" style="gap: 15px;">
+                        <input type="range" id="lyricBorderRadiusSlider" min="0" max="24" step="1" value="8" style="flex: 1; accent-color: #00ffff; cursor: pointer;" oninput="document.getElementById('lyricBorderRadiusVal').innerText = this.value + 'px'; updateLyricStyleFromForm();">
+                        <span id="lyricBorderRadiusVal" style="font-family: monospace; font-size: 13px; color: #00ffff; width: 45px;">8px</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">歌词显示字体：</label>
+                    <div class="input-group" style="gap: 10px; margin-bottom: 8px;">
+                        <select id="lyricFontFamilySelect" class="select-custom" style="flex: 1;" onchange="onLyricFontSelectChange(this.value)">
+                            <option value='"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif'>默认日中黑体 (Hiragino / MS PGothic / 微软雅黑)</option>
+                            <option value='"MS PGothic", "MS UI Gothic", sans-serif'>MS PGothic (经典日系K88/卡拉OK风)</option>
+                            <option value='"Meiryo", "メイリオ", sans-serif'>Meiryo (清晰圆润日系无衬线)</option>
+                            <option value='"Yu Gothic", "游ゴシック", sans-serif'>Yu Gothic (游黑体)</option>
+                            <option value='"Microsoft YaHei", "微软雅黑", sans-serif'>Microsoft YaHei (微软雅黑)</option>
+                            <option value='"SimHei", "黑体", sans-serif'>SimHei (中文经典黑体)</option>
+                            <option value='sans-serif'>系统默认无衬线 (sans-serif)</option>
+                            <option value='custom'>自定义字体名称...</option>
+                        </select>
+                    </div>
+                    <input type="text" id="lyricFontFamilyCustom" class="input-text" style="width: 100%; display: none;" placeholder="输入自定义字体名称，如: Arial, 'Noto Sans JP', sans-serif" oninput="updateLyricStyleFromForm()">
+                </div>
+
+                <!-- 实时预览区 -->
+                <div class="form-group">
+                    <label class="form-label">实时效果预览：</label>
+                    <div class="lyric-preview-box">
+                        <div class="lyric-preview-tag">LIVE PREVIEW</div>
+                        <div id="lyricLivePreviewContainer" style="display: flex; flex-direction: column; gap: 12px; align-items: center; width: 100%;">
+                            <!-- 动态注入预览双层卡拉OK行 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer" id="modalFooter">
+                <button class="btn-reset" id="resetLyricStyleBtn" style="display:none;" onclick="resetDefaultLyricStyles()">重置歌词样式为默认值</button>
+                <button class="btn-reset" id="resetStyleBtn" style="display:none;" onclick="resetDefaultTitleStyles()">重置为默认值</button>
+                <button class="btn-preview" id="previewStyleBtn" style="display:none;" onclick="previewTitleOverlay()">👁 预览 Title 画面</button>
+            </div>
+        </div>
+    </div>
+
 <script>
-    const { ipcRenderer } = require('electron');
+    const { ipcRenderer, clipboard, shell } = require('electron');
     const fs = require('fs');
     const path = require('path');
     const iconv = require('iconv-lite');
-    const socket = io();
+    
+    const SERVER_ORIGIN = 'http://127.0.0.1:3000';
+    const socket = io(SERVER_ORIGIN);
 
     const video = document.getElementById('videoPlayer');
+    const vocalAudio = document.getElementById('vocalAudio');
+    const titleOverlay = document.getElementById('titleOverlay');
+    const exitPreviewBtn = document.getElementById('exitPreviewBtn');
     const hud = document.getElementById('hud');
     const songInfo = document.getElementById('songInfo');
     const karaokeDisplay = document.getElementById('karaokeDisplay');
@@ -99,46 +467,548 @@
     const progressBar = document.getElementById('progressBar');
     const playBtn = document.getElementById('playBtn');
     const volumeSlider = document.getElementById('volumeSlider');
+    const settingsModal = document.getElementById('settingsModal');
+    const songsDirInput = document.getElementById('songsDirInput');
+    const lanUrlInput = document.getElementById('lanUrlInput');
+    const qrcodeContainer = document.getElementById('qrcodeContainer');
 
     let currentMetadata = {};
     let parsedPhrases = [];
     let isPlayingQueue = false;
-    
+    let isVocalEnabled = false;
+    let currentPitch = 0;
+    let isPreviewMode = false;
+    let qrCodeObj = null;
+    let titleTimer = null;
+
+    let tonePitchShiftNode = null;
+    let toneVideoSource = null;
+    let toneVocalSource = null;
+    let isToneInitialized = false;
+
     let activeMainRowsCount = -1;
     let activeHasSubSlot = false;
 
+    // 歌词字幕文字垫底背景与字体可配置变量
+    const DEFAULT_LYRIC_STYLE = {
+        enabled: false,
+        bgColor: '#000000',
+        bgOpacity: 0.6,
+        borderRadius: 8,
+        fontFamily: '"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif'
+    };
+
+    let lyricStyleConfig = loadLyricStyleConfig();
+
+    function loadLyricStyleConfig() {
+        try {
+            const saved = localStorage.getItem('joyhack_lyric_style');
+            if (saved) {
+                return Object.assign({}, DEFAULT_LYRIC_STYLE, JSON.parse(saved));
+            }
+        } catch (e) {
+            console.error(e);
+        }
+        return JSON.parse(JSON.stringify(DEFAULT_LYRIC_STYLE));
+    }
+
+    function saveLyricStyleConfig() {
+        try {
+            localStorage.setItem('joyhack_lyric_style', JSON.stringify(lyricStyleConfig));
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    function applyLyricStyleConfigToForm() {
+        document.getElementById('lyricBgEnabled').checked = !!lyricStyleConfig.enabled;
+        document.getElementById('lyricBgColorPicker').value = lyricStyleConfig.bgColor || '#000000';
+        document.getElementById('lyricBgColorText').value = lyricStyleConfig.bgColor || '#000000';
+        
+        const opacity = lyricStyleConfig.bgOpacity !== undefined ? lyricStyleConfig.bgOpacity : 0.6;
+        document.getElementById('lyricBgOpacitySlider').value = opacity;
+        document.getElementById('lyricBgOpacityVal').innerText = Math.round(opacity * 100) + '%';
+        
+        const radius = lyricStyleConfig.borderRadius !== undefined ? lyricStyleConfig.borderRadius : 8;
+        document.getElementById('lyricBorderRadiusSlider').value = radius;
+        document.getElementById('lyricBorderRadiusVal').innerText = radius + 'px';
+
+        const fontSelect = document.getElementById('lyricFontFamilySelect');
+        const customFontInput = document.getElementById('lyricFontFamilyCustom');
+        const currentFont = lyricStyleConfig.fontFamily || DEFAULT_LYRIC_STYLE.fontFamily;
+        
+        let found = false;
+        for (let i = 0; i < fontSelect.options.length; i++) {
+            if (fontSelect.options[i].value === currentFont) {
+                fontSelect.selectedIndex = i;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            fontSelect.value = 'custom';
+            customFontInput.style.display = 'block';
+            customFontInput.value = currentFont;
+        } else {
+            customFontInput.style.display = 'none';
+        }
+        renderLyricLivePreview();
+    }
+
+    function updateLyricStyleFromForm() {
+        lyricStyleConfig.enabled = document.getElementById('lyricBgEnabled').checked;
+        lyricStyleConfig.bgColor = document.getElementById('lyricBgColorText').value || '#000000';
+        lyricStyleConfig.bgOpacity = parseFloat(document.getElementById('lyricBgOpacitySlider').value) || 0;
+        lyricStyleConfig.borderRadius = parseInt(document.getElementById('lyricBorderRadiusSlider').value, 10) || 0;
+
+        const fontSelect = document.getElementById('lyricFontFamilySelect');
+        if (fontSelect.value === 'custom') {
+            lyricStyleConfig.fontFamily = document.getElementById('lyricFontFamilyCustom').value || 'sans-serif';
+        } else {
+            lyricStyleConfig.fontFamily = fontSelect.value;
+        }
+
+        saveLyricStyleConfig();
+        renderLyricLivePreview();
+    }
+
+    function onLyricFontSelectChange(val) {
+        const customInput = document.getElementById('lyricFontFamilyCustom');
+        if (val === 'custom') {
+            customInput.style.display = 'block';
+            customInput.focus();
+        } else {
+            customInput.style.display = 'none';
+        }
+        updateLyricStyleFromForm();
+    }
+
+    function resetDefaultLyricStyles() {
+        lyricStyleConfig = JSON.parse(JSON.stringify(DEFAULT_LYRIC_STYLE));
+        saveLyricStyleConfig();
+        applyLyricStyleConfigToForm();
+        showToast("已重置歌词显示设置与背景为默认值");
+    }
+
+    function renderLyricLivePreview() {
+        const container = document.getElementById('lyricLivePreviewContainer');
+        if (!container) return;
+
+        const bgStyle = (lyricStyleConfig.enabled && lyricStyleConfig.bgOpacity > 0)
+            ? `background: ${hexToRgba(lyricStyleConfig.bgColor, lyricStyleConfig.bgOpacity)}; border-radius: ${lyricStyleConfig.borderRadius}px; padding: 2px 14px; box-decoration-break: clone; -webkit-box-decoration-break: clone;`
+            : '';
+        const fontStyle = lyricStyleConfig.fontFamily
+            ? `font-family: ${lyricStyleConfig.fontFamily};`
+            : '';
+        const wrapperStyle = (bgStyle || fontStyle) ? ` style="${bgStyle} ${fontStyle}"` : '';
+
+        // 双层卡拉OK歌词结构：模拟一个正在播放擦色的主行，以及一个预告行
+        const baseColor = '#FFFFFF';
+        const baseEdge = '#000000';
+        const activeColor = '#FF0033';
+        const activeEdge = '#FFFFFF';
+        const baseShadow = getSmoothShadow(baseEdge) + ', 0 4px 12px rgba(0,0,0,0.85)';
+        const activeShadow = getSmoothShadow(activeEdge) + ', 0 0 16px ' + activeColor + ', 0 4px 8px rgba(0,0,0,0.9)';
+
+        // 模拟词语 1: 已唱过(clip 100%)
+        const word1 = `<div class="karaoke-word-wrapper" style="font-size: 32px;"><div class="karaoke-word-base" style="color:${baseColor}; text-shadow:${baseShadow};">心</div><div class="karaoke-word-active" style="color:${activeColor}; text-shadow:${activeShadow}; --clip: 100%;">心</div></div>`;
+        // 模拟词语 2: 正在擦色(clip 55%) 带振假名 ruby
+        const rubyBase = `<ruby>弾<rt style="font-size:14px; color:${baseColor}; text-shadow:${baseShadow};">はじ</rt></ruby>`;
+        const rubyActive = `<ruby>弾<rt style="font-size:14px; color:${activeColor}; text-shadow:${activeShadow};">はじ</rt></ruby>`;
+        const word2 = `<div class="karaoke-word-wrapper" style="font-size: 32px;"><div class="karaoke-word-base" style="color:${baseColor}; text-shadow:${baseShadow};">${rubyBase}</div><div class="karaoke-word-active" style="color:${activeColor}; text-shadow:${activeShadow}; --clip: 55%;">${rubyActive}</div></div>`;
+        // 模拟词语 3: 未开唱(clip 0%)
+        const word3 = `<div class="karaoke-word-wrapper" style="font-size: 32px;"><div class="karaoke-word-base" style="color:${baseColor}; text-shadow:${baseShadow};">むメロディ</div><div class="karaoke-word-active" style="color:${activeColor}; text-shadow:${activeShadow}; --clip: 0%;">むメロディ</div></div>`;
+
+        // 模拟下一行（半透明预备）
+        const wordNext = `<div class="karaoke-word-wrapper" style="font-size: 32px;"><div class="karaoke-word-base" style="color:${baseColor}; text-shadow:${baseShadow};">今宵の歌声よ 永遠に</div><div class="karaoke-word-active" style="color:${activeColor}; text-shadow:${activeShadow}; --clip: 0%;">今宵の歌声よ 永遠に</div></div>`;
+
+        container.innerHTML = `
+            <div style="width: 100%; text-align: center; height: 48px; line-height: 48px;">
+                <span class="lyric-line-bg"${wrapperStyle}>${word1}${word2}${word3}</span>
+            </div>
+            <div style="width: 100%; text-align: center; height: 48px; line-height: 48px; opacity: 0.5;">
+                <span class="lyric-line-bg"${wrapperStyle}>${wordNext}</span>
+            </div>
+        `;
+    }
+
+    function clearKaraokeDisplay() {
+        parsedPhrases = [];
+        karaokeDisplay.innerHTML = "";
+        activeMainRowsCount = -1;
+        activeHasSubSlot = false;
+    }
+
+    const DEFAULT_TITLE_STYLE = {
+        bgColor: '#0000ff',
+        title: { fontFamily: '"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif', fontSize: 72, color: '#ffffff', align: 'center' },
+        credits: { fontFamily: '"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif', fontSize: 26, color: '#ffffff', align: 'right' },
+        works: { fontFamily: '"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif', fontSize: 32, color: '#ffffff', align: 'center' },
+        singer: { fontFamily: '"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif', fontSize: 52, color: '#ffffff', align: 'center' }
+    };
+
+    let titleStyleConfig = loadTitleStyleConfig();
+
+    function loadTitleStyleConfig() {
+        try {
+            const saved = localStorage.getItem('joyhack_title_style');
+            if (saved) return JSON.parse(saved);
+        } catch (e) {
+            console.error(e);
+        }
+        return JSON.parse(JSON.stringify(DEFAULT_TITLE_STYLE));
+    }
+
+    function saveTitleStyleConfig() {
+        try {
+            localStorage.setItem('joyhack_title_style', JSON.stringify(titleStyleConfig));
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    function applyStyleConfigToForm() {
+        document.getElementById('titleBgColorPicker').value = titleStyleConfig.bgColor;
+        document.getElementById('titleBgColorText').value = titleStyleConfig.bgColor;
+
+        document.getElementById('titleFontFamily').value = titleStyleConfig.title.fontFamily || DEFAULT_TITLE_STYLE.title.fontFamily;
+        document.getElementById('titleFontSize').value = titleStyleConfig.title.fontSize;
+        document.getElementById('titleColor').value = titleStyleConfig.title.color;
+        document.getElementById('titleAlign').value = titleStyleConfig.title.align;
+
+        document.getElementById('creditsFontFamily').value = titleStyleConfig.credits.fontFamily || DEFAULT_TITLE_STYLE.credits.fontFamily;
+        document.getElementById('creditsFontSize').value = titleStyleConfig.credits.fontSize;
+        document.getElementById('creditsColor').value = titleStyleConfig.credits.color;
+        document.getElementById('creditsAlign').value = titleStyleConfig.credits.align;
+
+        document.getElementById('worksFontFamily').value = titleStyleConfig.works.fontFamily || DEFAULT_TITLE_STYLE.works.fontFamily;
+        document.getElementById('worksFontSize').value = titleStyleConfig.works.fontSize;
+        document.getElementById('worksColor').value = titleStyleConfig.works.color;
+        document.getElementById('worksAlign').value = titleStyleConfig.works.align;
+
+        document.getElementById('singerFontFamily').value = titleStyleConfig.singer.fontFamily || DEFAULT_TITLE_STYLE.singer.fontFamily;
+        document.getElementById('singerFontSize').value = titleStyleConfig.singer.fontSize;
+        document.getElementById('singerColor').value = titleStyleConfig.singer.color;
+        document.getElementById('singerAlign').value = titleStyleConfig.singer.align;
+    }
+
+    function readStyleConfigFromForm() {
+        titleStyleConfig.bgColor = document.getElementById('titleBgColorText').value || '#0000ff';
+
+        titleStyleConfig.title.fontFamily = document.getElementById('titleFontFamily').value;
+        titleStyleConfig.title.fontSize = parseInt(document.getElementById('titleFontSize').value, 10) || 72;
+        titleStyleConfig.title.color = document.getElementById('titleColor').value;
+        titleStyleConfig.title.align = document.getElementById('titleAlign').value;
+
+        titleStyleConfig.credits.fontFamily = document.getElementById('creditsFontFamily').value;
+        titleStyleConfig.credits.fontSize = parseInt(document.getElementById('creditsFontSize').value, 10) || 26;
+        titleStyleConfig.credits.color = document.getElementById('creditsColor').value;
+        titleStyleConfig.credits.align = document.getElementById('creditsAlign').value;
+
+        titleStyleConfig.works.fontFamily = document.getElementById('worksFontFamily').value;
+        titleStyleConfig.works.fontSize = parseInt(document.getElementById('worksFontSize').value, 10) || 32;
+        titleStyleConfig.works.color = document.getElementById('worksColor').value;
+        titleStyleConfig.works.align = document.getElementById('worksAlign').value;
+
+        titleStyleConfig.singer.fontFamily = document.getElementById('singerFontFamily').value;
+        titleStyleConfig.singer.fontSize = parseInt(document.getElementById('singerFontSize').value, 10) || 52;
+        titleStyleConfig.singer.color = document.getElementById('singerColor').value;
+        titleStyleConfig.singer.align = document.getElementById('singerAlign').value;
+
+        saveTitleStyleConfig();
+    }
+
+    function resetDefaultTitleStyles() {
+        titleStyleConfig = JSON.parse(JSON.stringify(DEFAULT_TITLE_STYLE));
+        saveTitleStyleConfig();
+        applyStyleConfigToForm();
+        showToast("已重置 Title 画面样式为默认值");
+    }
+
+    function syncColorInput(picker, targetId) {
+        document.getElementById(targetId).value = picker.value;
+    }
+
+    function syncColorPicker(input, targetId) {
+        if (/^#[0-9A-F]{6}$/i.test(input.value)) {
+            document.getElementById(targetId).value = input.value;
+        }
+    }
+
+    function renderQRCode(url) {
+        if (!url || url.includes("检测") || url.includes("失败")) return;
+        qrcodeContainer.innerHTML = "";
+        qrCodeObj = new QRCode(qrcodeContainer, {
+            text: url,
+            width: 140,
+            height: 140,
+            colorDark : "#000000",
+            colorLight : "#ffffff",
+            correctLevel : QRCode.CorrectLevel.H
+        });
+    }
+
+    function switchTab(tabName) {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+        document.getElementById('previewStyleBtn').style.display = 'none';
+        document.getElementById('resetStyleBtn').style.display = 'none';
+        document.getElementById('resetLyricStyleBtn').style.display = 'none';
+
+        if (tabName === 'general') {
+            document.querySelectorAll('.tab-btn')[0].classList.add('active');
+            document.getElementById('tabGeneral').classList.add('active');
+        } else if (tabName === 'titleStyle') {
+            document.querySelectorAll('.tab-btn')[1].classList.add('active');
+            document.getElementById('tabTitleStyle').classList.add('active');
+            document.getElementById('previewStyleBtn').style.display = 'inline-block';
+            document.getElementById('resetStyleBtn').style.display = 'inline-block';
+            applyStyleConfigToForm();
+        } else if (tabName === 'lyricStyle') {
+            document.querySelectorAll('.tab-btn')[2].classList.add('active');
+            document.getElementById('tabLyricStyle').classList.add('active');
+            document.getElementById('resetLyricStyleBtn').style.display = 'inline-block';
+            applyLyricStyleConfigToForm();
+        }
+    }
+
+    function previewTitleOverlay() {
+        readStyleConfigFromForm();
+        isPreviewMode = true;
+
+        settingsModal.classList.remove('show');
+
+        const mockMetadata = {
+            title: currentMetadata.title || 'せめて今夜だけは',
+            lyrics: currentMetadata.lyrics || 'なんだあらんど',
+            music: currentMetadata.music || '北村勝彦',
+            works: currentMetadata.works || 'クレヨンしんちゃん',
+            singer: currentMetadata.singer || 'ひろし＆みさえ'
+        };
+
+        setupTitleOverlay(null, mockMetadata);
+        titleOverlay.classList.add('active');
+        exitPreviewBtn.style.display = 'block';
+    }
+
+    function exitTitlePreview() {
+        isPreviewMode = false;
+        titleOverlay.classList.remove('active');
+        exitPreviewBtn.style.display = 'none';
+        settingsModal.classList.add('show');
+    }
+
     const canvas = document.getElementById('canvasBg');
     const ctx = canvas.getContext('2d');
-    function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
-    resize();
-    window.addEventListener('resize', resize);
+    
+    function resizeCanvas() { 
+        canvas.width = window.innerWidth; 
+        canvas.height = window.innerHeight; 
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
 
-    let particles = Array.from({length: 50}, () => ({
-        x: Math.random() * window.innerWidth, y: Math.random() * window.innerHeight,
-        r: Math.random() * 3 + 1.5, dx: (Math.random() - 0.5) * 1.2, dy: (Math.random() - 0.5) * 1.2,
+    let particles = Array.from({length: 60}, () => ({
+        x: Math.random() * window.innerWidth, 
+        y: Math.random() * window.innerHeight,
+        r: Math.random() * 3 + 1.5, 
+        dx: (Math.random() - 0.5) * 1.5, 
+        dy: (Math.random() - 0.5) * 1.5,
         color: Math.random() > 0.5 ? '#00ffff' : '#ff007f'
     }));
 
-    function renderParticles() {
-        ctx.fillStyle = 'rgba(0, 0, 10, 0.3)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    function drawParticles() {
+        ctx.fillStyle = 'rgba(0, 0, 10, 0.3)'; 
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
         particles.forEach(p => {
-            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fillStyle = p.color; ctx.fill();
-            p.x += p.dx; p.y += p.dy;
+            ctx.beginPath(); 
+            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); 
+            ctx.fillStyle = p.color; 
+            ctx.fill();
+            
+            p.x += p.dx; 
+            p.y += p.dy;
             if(p.x < 0 || p.x > canvas.width) p.dx *= -1;
             if(p.y < 0 || p.y > canvas.height) p.dy *= -1;
         });
-        requestAnimationFrame(renderParticles);
+        requestAnimationFrame(drawParticles);
     }
-    renderParticles();
+    drawParticles();
+
+    async function initToneEngine() {
+        if (isToneInitialized) return;
+        try {
+            if (typeof Tone === 'undefined') {
+                console.warn("Tone.js 库未加载，回退至原生音频流程");
+                return;
+            }
+
+            await Tone.start();
+
+            tonePitchShiftNode = new Tone.PitchShift({
+                pitch: 0,
+                windowSize: 0.08,
+                delayTime: 0,
+                feedback: 0
+            }).toDestination();
+
+            toneVideoSource = Tone.getContext().createMediaElementSource(video);
+            toneVocalSource = Tone.getContext().createMediaElementSource(vocalAudio);
+
+            Tone.connect(toneVideoSource, tonePitchShiftNode);
+            Tone.connect(toneVocalSource, tonePitchShiftNode);
+
+            isToneInitialized = true;
+        } catch (e) {
+            console.error("初始化 Tone.js 引擎失败:", e);
+        }
+    }
+
+    function applyPitchShift(pitchVal) {
+        currentPitch = pitchVal;
+
+        video.playbackRate = 1.0;
+        vocalAudio.playbackRate = 1.0;
+
+        if (isToneInitialized && tonePitchShiftNode) {
+            tonePitchShiftNode.pitch = pitchVal;
+        }
+
+        updateHudDisplay();
+    }
+
+    function updateHudDisplay() {
+        if (!currentMetadata.title) return;
+        const pitchStr = currentPitch > 0 ? `+${currentPitch}` : `${currentPitch}`;
+        hud.innerText = `${currentMetadata.title} [Key: ${currentPitch === 0 ? '原调' : pitchStr}] [模式: ${isVocalEnabled ? '原唱' : '伴唱'}]`;
+    }
+
+    socket.on('broadcast-pitch', (pitchVal) => {
+        applyPitchShift(pitchVal);
+    });
+
+    function showToast(message) {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.innerText = message;
+        container.appendChild(toast);
+
+        setTimeout(() => toast.classList.add('show'), 10);
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, 2500);
+    }
+
+    async function loadSettingsConfig() {
+        try {
+            const resDir = await fetch(`${SERVER_ORIGIN}/api/config/songs-dir`);
+            if (resDir.ok) {
+                const dataDir = await resDir.json();
+                songsDirInput.value = dataDir.songsDir || "未设置";
+            }
+            const resNet = await fetch(`${SERVER_ORIGIN}/api/config/network-info`);
+            if (resNet.ok) {
+                const dataNet = await resNet.json();
+                lanUrlInput.value = dataNet.lanUrl;
+                renderQRCode(dataNet.lanUrl);
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    function copyLanUrl() {
+        const url = lanUrlInput.value;
+        if (url && !url.includes("失败")) {
+            clipboard.writeText(url);
+            showToast("已复制点歌后台地址！可分发给同 Wi-Fi 朋友");
+        }
+    }
+
+    async function browseSongsDir() {
+        const selectedDir = await ipcRenderer.invoke('SELECT_SONGS_DIR');
+        if (selectedDir) {
+            try {
+                const res = await fetch(`${SERVER_ORIGIN}/api/config/songs-dir`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ songsDir: selectedDir })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    songsDirInput.value = data.songsDir;
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    }
+
+    function openSettingsModal(defaultTab = 'general') {
+        settingsModal.classList.add('show');
+        loadSettingsConfig();
+        switchTab(defaultTab);
+    }
+
+    function closeSettingsModal() {
+        readStyleConfigFromForm();
+        settingsModal.classList.remove('show');
+    }
+
+    function openAdminWeb() {
+        shell.openExternal(`${SERVER_ORIGIN}/admin`);
+    }
+
+    ipcRenderer.on('TOGGLE_SETTINGS_MODAL', () => {
+        if (settingsModal.classList.contains('show')) {
+            closeSettingsModal();
+        } else {
+            openSettingsModal('general');
+        }
+    });
+
+    ipcRenderer.on('OPEN_LYRIC_STYLE_MODAL', () => {
+        openSettingsModal('lyricStyle');
+    });
 
     function decodeJapaneseBuffer(buffer) {
-        let str = iconv.decode(buffer, 'cp932');
-        if (str.includes('\uFFFD')) { 
-            let strShiftJis = iconv.decode(buffer, 'Shift_JIS');
-            if (!strShiftJis.includes('\uFFFD')) return strShiftJis;
-            return iconv.decode(buffer, 'utf-8');
+        if (!buffer || buffer.length === 0) return '';
+
+        // 1. 嗅探 UTF-16LE BOM (Windows 记事本 Unicode)
+        if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xFE) {
+            return iconv.decode(buffer, 'utf16le');
         }
-        return str;
+        // 2. 嗅探 UTF-16BE BOM
+        if (buffer.length >= 2 && buffer[0] === 0xFE && buffer[1] === 0xFF) {
+            return iconv.decode(buffer, 'utf16be');
+        }
+        // 3. 嗅探 UTF-8 BOM
+        if (buffer.length >= 3 && buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
+            return iconv.decode(buffer, 'utf8');
+        }
+
+        // 4. 字节流探测：如果前 100 字节内发现空字节，极大概率是无 BOM 的 UTF-16LE
+        let hasNull = false;
+        for (let i = 0; i < Math.min(buffer.length, 100); i++) {
+            if (buffer[i] === 0x00) {
+                hasNull = true;
+                break;
+            }
+        }
+        if (hasNull) return iconv.decode(buffer, 'utf16le');
+
+        // 5. 尝试严格模式的 UTF-8 解码
+        let strUtf8 = iconv.decode(buffer, 'utf8');
+        if (!strUtf8.includes('\uFFFD')) {
+            return strUtf8;
+        }
+
+        // 6. 终极回退方案：CP932 / Shift_JIS (日文系统标准格式)
+        return iconv.decode(buffer, 'cp932');
     }
 
     ipcRenderer.on('OPEN_KAROKE_FILE', (event, filePath) => {
@@ -151,44 +1021,101 @@
         }
     });
 
-    socket.on('broadcast-command', (cmd) => {
+    async function executeCommand(cmd) {
         if (cmd === 'TOGGLE_PLAY') {
             togglePlay();
+        } else if (cmd === 'RESTART') {
+            restartSong();
         } else if (cmd === 'NEXT_SONG') {
             video.pause();
+            vocalAudio.pause();
+            if (titleTimer) clearTimeout(titleTimer);
+            clearKaraokeDisplay();
+            await fetch(`${SERVER_ORIGIN}/api/queue/0`, { method: 'DELETE' });
+            isPlayingQueue = false;
+            playNextInQueue();
+        } else if (cmd === 'PLAY_NOW') {
+            video.pause();
+            vocalAudio.pause();
+            if (titleTimer) clearTimeout(titleTimer);
+            clearKaraokeDisplay();
             isPlayingQueue = false;
             playNextInQueue();
         } else if (cmd === 'TOGGLE_VOCAL') {
-            video.muted = !video.muted;
-            hud.innerText = `${currentMetadata.title} [伴唱/原唱: ${video.muted ? '伴唱' : '原唱'}]`;
+            toggleVocal();
+        } else if (cmd === 'PITCH_UP') {
+            currentPitch++;
+            socket.emit('change-pitch', currentPitch);
+            applyPitchShift(currentPitch);
+        } else if (cmd === 'PITCH_DOWN') {
+            currentPitch--;
+            socket.emit('change-pitch', currentPitch);
+            applyPitchShift(currentPitch);
+        } else if (cmd === 'PITCH_RESET') {
+            currentPitch = 0;
+            socket.emit('change-pitch', currentPitch);
+            applyPitchShift(currentPitch);
         }
+    }
+
+    socket.on('broadcast-command', (cmd) => {
+        executeCommand(cmd);
+    });
+
+    ipcRenderer.on('MENU_COMMAND', (event, cmd) => {
+        executeCommand(cmd);
     });
 
     socket.on('broadcast-seek', (percent) => {
         if (!isNaN(video.duration) && video.duration > 0) {
-            video.currentTime = (percent / 100) * video.duration;
+            const targetTime = (percent / 100) * video.duration;
+            video.currentTime = targetTime;
+            vocalAudio.currentTime = targetTime;
         }
     });
 
     socket.on('broadcast-volume', (vol) => {
-        video.volume = vol;
-        volumeSlider.value = vol;
+        setVolume(vol);
     });
+
+    function toggleVocal() {
+        isVocalEnabled = !isVocalEnabled;
+        applyAudioMix();
+        updateHudDisplay();
+    }
+
+    function applyAudioMix() {
+        const masterVol = parseFloat(volumeSlider.value);
+        if (isVocalEnabled) {
+            video.volume = 0;
+            vocalAudio.volume = masterVol;
+        } else {
+            video.volume = masterVol;
+            vocalAudio.volume = 0;
+        }
+    }
 
     async function playNextInQueue() {
         try {
-            const res = await fetch('/api/queue');
+            const res = await fetch(`${SERVER_ORIGIN}/api/queue`);
             const queue = await res.json();
             if (queue.length > 0) {
                 isPlayingQueue = true;
                 const song = queue[0];
-                await fetch('/api/queue/0', { method: 'DELETE' });
+                currentPitch = song.pitch || 0;
                 loadAndPlaySong(song.txtFile);
             } else {
                 isPlayingQueue = false;
-                hud.innerText = "播放队列已空 [状态: 停止]";
+                hud.innerText = "等待点歌... [状态: 停止]";
                 songInfo.innerText = "";
+                if (titleTimer) clearTimeout(titleTimer);
+                clearKaraokeDisplay();
+                if (!isPreviewMode) {
+                    titleOverlay.classList.remove('active');
+                    titleOverlay.innerHTML = "";
+                }
                 video.style.display = 'none';
+                vocalAudio.pause();
             }
         } catch (e) {
             console.error("处理播放队列失败:", e);
@@ -196,10 +1123,13 @@
         }
     }
 
-    function loadAndPlaySong(filePath) {
+    async function loadAndPlaySong(filePath) {
         try {
+            await initToneEngine();
+
             if (!fs.existsSync(filePath)) {
                 console.error("找不到文件:", filePath);
+                fetch(`${SERVER_ORIGIN}/api/queue/0`, { method: 'DELETE' });
                 isPlayingQueue = false;
                 playNextInQueue();
                 return;
@@ -210,12 +1140,17 @@
 
             currentMetadata = {
                 title: parseTag(content, 'title') || path.basename(filePath, '.txt'),
-                lyrics: parseTag(content, 'lyrics') || 'N/A',
-                music: parseTag(content, 'music') || 'N/A',
-                singer: parseTag(content, 'singer') || 'N/A',
-                works: parseTag(content, 'works') || 'N/A',
-                source: parseTag(content, 'source')
+                lyrics: parseTag(content, 'lyrics') || '',
+                music: parseTag(content, 'music') || '',
+                singer: parseTag(content, 'singer') || '',
+                works: parseTag(content, 'works') || '',
+                source: parseTag(content, 'source'),
+                titleimage: parseTag(content, 'titleimage')
             };
+
+            const mediaExts = ['.mp3', '.wav', '.m4a', '.mp4', '.mkv'];
+            const imgExts = ['.png', '.jpg', '.jpeg', '.bmp'];
+            const files = fs.readdirSync(dir);
 
             let mediaPath = null;
             if (currentMetadata.source) {
@@ -223,36 +1158,124 @@
                 if (fs.existsSync(target)) mediaPath = target;
             }
             if (!mediaPath) {
-                const mediaExts = ['.mp3', '.wav', '.m4a', '.mp4', '.mkv'];
-                const files = fs.readdirSync(dir);
-                const found = files.find(f => mediaExts.includes(path.extname(f).toLowerCase()));
+                const found = files.find(f => !f.toLowerCase().startsWith('v_') && mediaExts.includes(path.extname(f).toLowerCase()));
                 if (found) mediaPath = path.join(dir, found);
             }
 
+            let vocalPath = null;
+            const foundVocal = files.find(f => f.toLowerCase().startsWith('v_') && mediaExts.includes(path.extname(f).toLowerCase()));
+            if (foundVocal) {
+                vocalPath = path.join(dir, foundVocal);
+            }
+
+            let titleImagePath = null;
+            if (currentMetadata.titleimage) {
+                let targetImg = path.join(dir, currentMetadata.titleimage.trim());
+                if (fs.existsSync(targetImg)) titleImagePath = targetImg;
+            }
+            if (!titleImagePath) {
+                const foundImg = files.find(f => imgExts.includes(path.extname(f).toLowerCase()));
+                if (foundImg) titleImagePath = path.join(dir, foundImg);
+            }
+
+            setupTitleOverlay(titleImagePath);
+
+            clearKaraokeDisplay();
             parsedPhrases = parseJoyHackLinearStream(content);
-            if (mediaPath) playMedia(mediaPath);
+            if (mediaPath) playMedia(mediaPath, vocalPath);
         } catch (e) {
             console.error("解析文件失败:", e);
+            fetch(`${SERVER_ORIGIN}/api/queue/0`, { method: 'DELETE' });
             isPlayingQueue = false;
             playNextInQueue();
         }
     }
 
-    function parseTag(text, tagName) {
-        const reg = new RegExp(`<${tagName}>([^<]+)`, 'i');
-        const match = text.match(reg);
-        return match ? match[1].trim() : null;
+    function setupTitleOverlay(titleImagePath, customData = null) {
+        const meta = customData || currentMetadata;
+        const cfg = titleStyleConfig;
+
+        titleOverlay.style.backgroundColor = cfg.bgColor;
+
+        if (titleImagePath) {
+            const formattedImgPath = titleImagePath.replace(/\\/g, '/');
+            titleOverlay.innerHTML = `<img src="file://${formattedImgPath}" class="title-overlay-img" alt="Title Image">`;
+        } else {
+            let creditsHtml = '';
+            if (meta.lyrics) creditsHtml += `<div>作词: ${meta.lyrics}</div>`;
+            if (meta.music) creditsHtml += `<div>作曲: ${meta.music}</div>`;
+
+            const titleFont = cfg.title.fontFamily ? `font-family:${cfg.title.fontFamily};` : '';
+            const creditsFont = cfg.credits.fontFamily ? `font-family:${cfg.credits.fontFamily};` : '';
+            const worksFont = cfg.works.fontFamily ? `font-family:${cfg.works.fontFamily};` : '';
+            const singerFont = cfg.singer.fontFamily ? `font-family:${cfg.singer.fontFamily};` : '';
+
+            let worksHtml = meta.works ? `<div class="title-card-works" style="${worksFont} font-size:${cfg.works.fontSize}px; color:${cfg.works.color}; text-align:${cfg.works.align};">&lt;『${meta.works}』より&gt;</div>` : '';
+            let singerHtml = meta.singer ? `<div class="title-card-singer" style="${singerFont} font-size:${cfg.singer.fontSize}px; color:${cfg.singer.color}; text-align:${cfg.singer.align};">${meta.singer}</div>` : '';
+
+            titleOverlay.innerHTML = `
+                <div class="title-card-text">
+                    <div class="title-card-title" style="${titleFont} font-size:${cfg.title.fontSize}px; color:${cfg.title.color}; text-align:${cfg.title.align};">${meta.title}</div>
+                    ${creditsHtml ? `<div class="title-card-credits" style="${creditsFont} font-size:${cfg.credits.fontSize}px; color:${cfg.credits.color}; text-align:${cfg.credits.align};">${creditsHtml}</div>` : ''}
+                    ${worksHtml}
+                    ${singerHtml}
+                </div>
+            `;
+        }
     }
 
-    function timeCodeToSeconds(tcStr) {
-        const parts = tcStr.split(':');
-        return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10) + (parseInt(parts[2], 10) / 60.0);
+    function parseTag(text, tagName) {
+        if (!text) return '';
+        const cleanText = text.replace(/[\u200B-\u200D\uFEFF\0]/g, '');
+        const reg = new RegExp(`<\\s*${tagName}\\s*>([^<]*)`, 'i');
+        const match = cleanText.match(reg);
+        if (match && match[1]) {
+            return match[1].trim();
+        }
+        return '';
+    }
+
+    function timeCodeToSeconds(tcStr, fixOffset = 0) {
+        if (!tcStr) return 0;
+        const parts = tcStr.trim().split(':');
+        if (parts.length < 3) return 0;
+        const m = parseFloat(parts[0]) || 0;
+        const s = parseFloat(parts[1]) || 0;
+        const ff = parseFloat(parts[2]) || 0;
+        return m * 60 + s + (ff / 60.0) + fixOffset;
     }
 
     function parseJoyHackLinearStream(text) {
         const lines = text.split(/[\r\n]+/);
         let activeLinesCount = 2;
-        let currentColors = {
+
+        // 解析 RecENT <timeCodeFix> 全局修正偏移量
+        let timeCodeFixVal = 0;
+        const fixMatch = text.match(/<timeCodeFix>([^\r\n]*)/i);
+        if (fixMatch && fixMatch[1]) {
+            const rawFix = fixMatch[1].trim();
+            if (rawFix.length === 9) {
+                const isNeg = rawFix.startsWith('-');
+                const tcSub = rawFix.substring(1);
+                const p = tcSub.split(':');
+                if (p.length === 3) {
+                    const s = (parseFloat(p[0]) * 60) + parseFloat(p[1]) + (parseFloat(p[2]) / 60.0);
+                    timeCodeFixVal = isNeg ? -s : s;
+                }
+            } else if (rawFix.length === 8) {
+                const p = rawFix.split(':');
+                if (p.length === 3) {
+                    timeCodeFixVal = (parseFloat(p[0]) * 60) + parseFloat(p[1]) + (parseFloat(p[2]) / 60.0);
+                }
+            }
+        }
+
+        let mainColors = {
+            fillBefore: '#FFFFFF', edgeBefore: '#000000', fillAfter: '#FF0033', edgeAfter: '#FFFFFF',
+            rubyFillBefore: '#FFFFFF', rubyEdgeBefore: '#000000', rubyFillAfter: '#FF0033', rubyEdgeAfter: '#FFFFFF'
+        };
+
+        let subColors = {
             fillBefore: '#FFFFFF', edgeBefore: '#000000', fillAfter: '#FF0033', edgeAfter: '#FFFFFF',
             rubyFillBefore: '#FFFFFF', rubyEdgeBefore: '#000000', rubyFillAfter: '#FF0033', rubyEdgeAfter: '#FFFFFF'
         };
@@ -279,22 +1302,6 @@
                 line = line.replace(/<\/?sub>/g, '');
             }
 
-            if (line.includes('<color>')) {
-                const colorTagMatch = line.match(/<color>([^<\t\r\n]+)/);
-                if (colorTagMatch) {
-                    const cArgs = colorTagMatch[1].split(',');
-                    if (cArgs[0] && cArgs[0].trim()) currentColors.fillBefore = '#' + cArgs[0].trim();
-                    if (cArgs[1] && cArgs[1].trim()) currentColors.edgeBefore = '#' + cArgs[1].trim();
-                    if (cArgs[2] && cArgs[2].trim()) currentColors.fillAfter = '#' + cArgs[2].trim();
-                    if (cArgs[3] && cArgs[3].trim()) currentColors.edgeAfter = '#' + cArgs[3].trim();
-                    if (cArgs[4] && cArgs[4].trim()) currentColors.rubyFillBefore = '#' + cArgs[4].trim();
-                    if (cArgs[5] && cArgs[5].trim()) currentColors.rubyEdgeBefore = '#' + cArgs[5].trim();
-                    if (cArgs[6] && cArgs[6].trim()) currentColors.rubyFillAfter = '#' + cArgs[6].trim();
-                    if (cArgs[7] && cArgs[7].trim()) currentColors.rubyEdgeAfter = '#' + cArgs[7].trim();
-                    line = line.replace(/<color>[^<\t\r\n]+/, '');
-                }
-            }
-
             const timeTagIndex = line.indexOf('<time>');
             if (timeTagIndex === -1) {
                 return;
@@ -307,7 +1314,7 @@
             const timeMatches = timePart.match(timeRegex);
             if (!timeMatches || timeMatches.length === 0) return;
 
-            const timeCodes = timeMatches.map(timeCodeToSeconds);
+            const timeCodes = timeMatches.map(t => timeCodeToSeconds(t, timeCodeFixVal));
             const showTime = timeCodes[0];
             const endTime = timeCodes[timeCodes.length - 1];
 
@@ -316,9 +1323,28 @@
 
             const wordList = [];
             for (let i = 0; i < rawWords.length; i++) {
-                const wText = rawWords[i];
+                let wText = rawWords[i];
                 const wStart = timeCodes[i] !== undefined ? timeCodes[i] : showTime;
                 const wEnd = timeCodes[i + 1] !== undefined ? timeCodes[i + 1] : endTime;
+
+                if (wText.includes('<color>')) {
+                    const colorMatch = wText.match(/<color>([^<\t\r\n]+)/);
+                    if (colorMatch) {
+                        const cArgs = colorMatch[1].split(',');
+                        const targetColorObj = isSub ? subColors : mainColors;
+
+                        if (cArgs[0] && cArgs[0].trim()) targetColorObj.fillBefore = '#' + cArgs[0].trim();
+                        if (cArgs[1] && cArgs[1].trim()) targetColorObj.edgeBefore = '#' + cArgs[1].trim();
+                        if (cArgs[2] && cArgs[2].trim()) targetColorObj.fillAfter = '#' + cArgs[2].trim();
+                        if (cArgs[3] && cArgs[3].trim()) targetColorObj.edgeAfter = '#' + cArgs[3].trim();
+                        if (cArgs[4] && cArgs[4].trim()) targetColorObj.rubyFillBefore = '#' + cArgs[4].trim();
+                        if (cArgs[5] && cArgs[5].trim()) targetColorObj.rubyEdgeBefore = '#' + cArgs[5].trim();
+                        if (cArgs[6] && cArgs[6].trim()) targetColorObj.rubyFillAfter = '#' + cArgs[6].trim();
+                        if (cArgs[7] && cArgs[7].trim()) targetColorObj.rubyEdgeAfter = '#' + cArgs[7].trim();
+
+                        wText = wText.replace(/<color>[^<\t\r\n]+/, '');
+                    }
+                }
 
                 let baseText = wText;
                 let rubyText = null;
@@ -328,15 +1354,13 @@
                     rubyText = rParts[1];
                 }
 
-                const isEmptySlot = (baseText === '' || baseText.replace(/[\s\u3000]/g, '') === '');
-
                 wordList.push({
                     word: baseText,
                     ruby: rubyText,
-                    isEmpty: isEmptySlot,
+                    isEmpty: (baseText === ''),
                     start: wStart,
                     end: wEnd,
-                    color: { ...currentColors }
+                    color: isSub ? { ...subColors } : { ...mainColors }
                 });
             }
 
@@ -354,33 +1378,45 @@
 
         phrases.sort((a, b) => a.showTime - b.showTime);
 
-        const pureMainPhrases = phrases.filter(p => !p.isSub && !p.isClearCmd);
-        
-        phrases.forEach(p => {
-            if (p.isSub) {
-                let hostIndex = pureMainPhrases.findIndex(m => p.showTime >= m.showTime && p.showTime <= m.endTime + 1.0);
-                if (hostIndex === -1) {
-                    hostIndex = pureMainPhrases.findIndex(m => m.showTime >= p.showTime);
-                }
-                if (hostIndex === -1 && pureMainPhrases.length > 0) {
-                    hostIndex = pureMainPhrases.length - 1;
-                }
+        // 核心修正 1：在遇到的每一个 <clear> 节点处彻底重置槽位与模式状态，阻断上段残存槽位污染
+        let modeCounter = 0;
+        let currentLinesMode = -1;
 
-                p.hostMain = hostIndex !== -1 ? pureMainPhrases[hostIndex] : null;
-                p.prevMain = (hostIndex > 0) ? pureMainPhrases[hostIndex - 1] : null;
+        phrases.forEach((p) => {
+            if (p.isClearCmd) {
+                modeCounter = 0;
+                currentLinesMode = -1; // 同时重置 linesMode，确保 clear 后的第一句歌词必定处于 Row 0
+                return;
+            }
+
+            if (!p.isSub) {
+                if (p.linesCount !== currentLinesMode) {
+                    currentLinesMode = p.linesCount;
+                    modeCounter = 0;
+                }
+                p.inModeIndex = modeCounter;
+                modeCounter++;
             }
         });
 
         return phrases;
     }
 
-    function playMedia(mediaPath) {
+    function playMedia(mediaPath, vocalPath) {
         video.style.display = 'block';
         video.src = `file://${mediaPath.replace(/\\/g, '/')}`;
-        video.volume = volumeSlider.value;
-        
-        hud.innerText = `${currentMetadata.title} [状态: 播放中]`;
-        songInfo.innerText = `作词: ${currentMetadata.lyrics} | 作曲: ${currentMetadata.music} | 出处: ${currentMetadata.works}`;
+
+        if (vocalPath) {
+            vocalAudio.src = `file://${vocalPath.replace(/\\/g, '/')}`;
+        } else {
+            vocalAudio.src = "";
+        }
+
+        isVocalEnabled = false;
+        applyAudioMix();
+        applyPitchShift(currentPitch);
+
+        songInfo.innerText = `作词: ${currentMetadata.lyrics || 'N/A'} | 作曲: ${currentMetadata.music || 'N/A'} | 出处: ${currentMetadata.works || 'N/A'}`;
 
         playBtn.disabled = false;
         playBtn.innerText = "暂停";
@@ -388,33 +1424,63 @@
         activeMainRowsCount = -1;
         activeHasSubSlot = false;
 
-        video.play().catch(err => console.log("等待手动触发播放:", err));
+        video.currentTime = 0;
+        if (vocalPath) vocalAudio.currentTime = 0;
+        video.pause();
+        if (vocalPath) vocalAudio.pause();
+
+        if (titleTimer) clearTimeout(titleTimer);
+
+        titleOverlay.classList.add('active');
+        hud.innerText = `${currentMetadata.title} [准备播放...]`;
+
+        titleTimer = setTimeout(() => {
+            if (!isPreviewMode) {
+                titleOverlay.classList.remove('active');
+            }
+            video.play().catch(err => console.log("等待手动触发播放:", err));
+            if (vocalPath) {
+                vocalAudio.play().catch(err => console.log("原唱轨同步受阻:", err));
+            }
+            updateHudDisplay();
+        }, 3000);
+
         requestAnimationFrame(animationLoop);
     }
 
     function setVolume(val) {
-        video.volume = val;
         volumeSlider.value = val;
+        applyAudioMix();
     }
 
-    video.onended = () => {
+    video.onended = async () => {
         hud.innerText = `${currentMetadata.title} [状态: 播放完毕]`;
-        karaokeDisplay.innerHTML = "";
+        clearKaraokeDisplay();
+        if (!isPreviewMode) titleOverlay.classList.remove('active');
+        vocalAudio.pause();
+        await fetch(`${SERVER_ORIGIN}/api/queue/0`, { method: 'DELETE' });
         isPlayingQueue = false;
         playNextInQueue();
     };
 
     video.onseeking = () => {
+        if (vocalAudio.src) vocalAudio.currentTime = video.currentTime;
         renderFrameAtTime(video.currentTime);
     };
 
     video.onseeked = () => {
+        if (vocalAudio.src) vocalAudio.currentTime = video.currentTime;
         renderFrameAtTime(video.currentTime);
     };
 
     video.ontimeupdate = () => {
         if (!isNaN(video.duration) && video.duration > 0) {
             const cur = video.currentTime;
+            
+            if (vocalAudio.src && Math.abs(vocalAudio.currentTime - cur) > 0.15) {
+                vocalAudio.currentTime = cur;
+            }
+
             progressBar.style.width = `${(cur / video.duration) * 100}%`;
             timeDisplay.innerText = `${formatTime(cur)} / ${formatTime(video.duration)}`;
             socket.emit('sync-progress', { currentTime: cur, duration: video.duration });
@@ -440,7 +1506,21 @@
 
         for (let i = 0; i < mainRowsCount; i++) {
             const row = document.createElement('div');
-            row.className = `lyric-row ${i % 2 === 0 ? 'row-align-left' : 'row-align-right'}`;
+            let alignClass = 'row-align-left';
+            
+            if (mainRowsCount === 1) {
+                alignClass = 'row-align-center';
+            } else if (mainRowsCount === 2) {
+                alignClass = i % 2 === 0 ? 'row-align-left' : 'row-align-right';
+            } else if (mainRowsCount === 3) {
+                if (i === 0) alignClass = 'row-align-left';
+                else if (i === 1) alignClass = 'row-align-center';
+                else alignClass = 'row-align-right';
+            } else if (mainRowsCount === 4) {
+                alignClass = i % 2 === 0 ? 'row-align-left' : 'row-align-right';
+            }
+
+            row.className = `lyric-row ${alignClass}`;
             row.id = `lyricRow_${i}`;
             karaokeDisplay.appendChild(row);
         }
@@ -456,6 +1536,7 @@
     function renderFrameAtTime(curTime) {
         if (parsedPhrases.length === 0) return;
 
+        // 1. 检查当前时刻是否处于某个 <clear> 执行区
         const activeClearCmd = parsedPhrases.find(p => p.isClearCmd && curTime >= p.showTime && curTime <= p.endTime);
         if (activeClearCmd) {
             karaokeDisplay.innerHTML = "";
@@ -467,59 +1548,75 @@
         const pureMains = parsedPhrases.filter(p => !p.isSub && !p.isClearCmd);
         if (pureMains.length === 0) return;
 
-        const isOpeningPreload = (curTime < pureMains[0].showTime);
+        // 2. 查找当前时间之前触发的最后一个 <clear> 节点
+        const clearCmdsBeforeCur = parsedPhrases.filter(p => p.isClearCmd && curTime >= p.endTime);
+        let lastClearTime = -1;
+        if (clearCmdsBeforeCur.length > 0) {
+            lastClearTime = clearCmdsBeforeCur[clearCmdsBeforeCur.length - 1].endTime;
+        }
 
-        let curIdx = -1;
-        if (isOpeningPreload) {
-            curIdx = 0;
+        // 3. 根据最近一次 <clear> 分隔离出的块过滤有效歌词
+        let currentBlockMains = [];
+        if (lastClearTime !== -1) {
+            currentBlockMains = pureMains.filter(m => m.showTime >= lastClearTime);
         } else {
-            for (let i = 0; i < pureMains.length; i++) {
-                if (curTime >= pureMains[i].showTime) {
-                    curIdx = i;
+            currentBlockMains = pureMains;
+        }
+
+        if (currentBlockMains.length === 0) {
+            karaokeDisplay.innerHTML = "";
+            return;
+        }
+
+        // 4. 定位焦点歌词与预渲染歌词
+        let localIdx = -1;
+        let isOpeningPreload = false;
+
+        if (curTime < currentBlockMains[0].showTime) {
+            localIdx = 0;
+            isOpeningPreload = true;
+        } else {
+            for (let i = 0; i < currentBlockMains.length; i++) {
+                if (curTime >= currentBlockMains[i].showTime) {
+                    localIdx = i;
                 } else {
                     break;
                 }
             }
         }
 
-        if (curIdx === -1) return;
+        if (localIdx === -1) return;
 
-        const currentMain = pureMains[curIdx];
-        const nextMain = pureMains[curIdx + 1];
+        const currentMain = currentBlockMains[localIdx];
+        const nextMain = currentBlockMains[localIdx + 1];
 
         const maxMainRows = currentMain.linesCount || 2;
 
-        const activeSub = parsedPhrases.find(p => {
-            if (!p.isSub || !p.hostMain) return false;
-
-            const delta = p.showTime - p.hostMain.showTime;
-            
-            let isTriggered = false;
-            if (delta <= 1.5) {
-                if (p.prevMain) {
-                    isTriggered = curTime >= p.prevMain.showTime;
-                } else {
-                    isTriggered = curTime >= (p.hostMain.showTime - 2.0);
-                }
-            } else {
-                isTriggered = curTime >= p.hostMain.showTime;
-            }
-
-            if (!isTriggered) return false;
-
-            const hostMainIdx = pureMains.indexOf(p.hostMain);
-            return curIdx <= hostMainIdx;
+        // 4.1 独立定位当前激活的副轨歌词 activeSub（完全解绑主乐句，完全按自身时间戳生命周期）
+        const subPhrases = parsedPhrases.filter(p => p.isSub && !p.isClearCmd);
+        const PRELOAD_WINDOW = 1.5; // 提前1.5秒半透明预备呈现
+        const activeSub = subPhrases.find(p => {
+            const appearTime = Math.max(0, p.showTime - PRELOAD_WINDOW);
+            return curTime >= appearTime && curTime <= p.endTime;
         });
 
         updateLayoutIfNeeded(maxMainRows, !!activeSub);
 
-        const activeRowIdx = maxMainRows >= 2 ? (curIdx % 2) : 0;
-        const previewRowIdx = maxMainRows >= 2 ? ((curIdx + 1) % 2) : -1;
+        // 5. 精准槽位映射逻辑（防止预加载与当期槽位互相挤占）
+        const activeRowIdx = maxMainRows > 1 ? (currentMain.inModeIndex % maxMainRows) : 0;
+        
+        let previewRowIdx = -1;
+        if (nextMain && nextMain.linesCount === maxMainRows && !nextMain.isClearCmd) {
+            const targetPreviewRow = nextMain.inModeIndex % maxMainRows;
+            // 只有预加载槽位与当前开唱槽位不冲突时才开启预加载
+            if (targetPreviewRow !== activeRowIdx) {
+                previewRowIdx = targetPreviewRow;
+            }
+        }
 
         const activeRowElem = document.getElementById(`lyricRow_${activeRowIdx}`);
         const previewRowElem = previewRowIdx !== -1 ? document.getElementById(`lyricRow_${previewRowIdx}`) : null;
 
-        // A. 渲染当前主乐句
         if (activeRowElem) {
             activeRowElem.innerHTML = buildLineHtml(currentMain);
             activeRowElem.style.opacity = isOpeningPreload ? "0.5" : "1";
@@ -540,7 +1637,6 @@
             });
         }
 
-        // B. 渲染预读主乐句
         if (previewRowElem) {
             if (nextMain && !nextMain.isClearCmd) {
                 previewRowElem.innerHTML = buildLineHtml(nextMain);
@@ -557,7 +1653,6 @@
             }
         }
 
-        // C. 渲染 <sub> 和声乐句
         if (activeSub) {
             const subElem = document.getElementById(`lyricRow_sub`);
             if (subElem) {
@@ -584,19 +1679,25 @@
         return `-1.5px -1.5px 0 ${color}, 1.5px -1.5px 0 ${color}, -1.5px 1.5px 0 ${color}, 1.5px 1.5px 0 ${color}, -2px 0 0 ${color}, 2px 0 0 ${color}, 0 -2px 0 ${color}, 0 2px 0 ${color}, -1px -2px 0 ${color}, 1px -2px 0 ${color}, -1px 2px 0 ${color}, 1px 2px 0 ${color}`;
     }
 
+    function hexToRgba(hex, alpha) {
+        let c = hex.replace('#', '');
+        if (c.length === 3) c = c.split('').map(x => x + x).join('');
+        const num = parseInt(c, 16);
+        return `rgba(${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}, ${alpha})`;
+    }
+
     function buildLineHtml(lineData) {
-        return lineData.words.map((w, idx) => {
-            // 对显式空格/空栏词块计算真实占位宽度，普通单字间保留 0 额外空隙
+        const bgStyle = (lyricStyleConfig.enabled && lyricStyleConfig.bgOpacity > 0)
+            ? `background: ${hexToRgba(lyricStyleConfig.bgColor, lyricStyleConfig.bgOpacity)}; border-radius: ${lyricStyleConfig.borderRadius}px; padding: 2px 14px; box-decoration-break: clone; -webkit-box-decoration-break: clone;`
+            : '';
+        const fontStyle = lyricStyleConfig.fontFamily
+            ? `font-family: ${lyricStyleConfig.fontFamily};`
+            : '';
+        const wrapperStyle = (bgStyle || fontStyle) ? ` style="${bgStyle} ${fontStyle}"` : '';
+
+        const wordsHtml = lineData.words.map((w, idx) => {
             if (w.isEmpty) {
-                let spaceWidth = 0;
-                if (w.word && w.word.includes(' ')) {
-                    spaceWidth = 45 * w.word.length; // 全角空格宽度
-                } else if (w.word && w.word.includes(' ')) {
-                    spaceWidth = 22 * w.word.length; // 半角空格宽度
-                }
-                if (spaceWidth > 0) {
-                    return `<div class="karaoke-word-wrapper" data-widx="${idx}" style="display:inline-block; width: ${spaceWidth}px;"></div>`;
-                }
+                return '';
             }
 
             let displayText = w.word;
@@ -623,30 +1724,77 @@
                 activeInner = `<ruby>${displayText}<rt style="color:${c.rubyFillAfter}; text-shadow:${rubyActiveShadow};">${rubyText}</rt></ruby>`;
             }
 
-            return `<div class="karaoke-word-wrapper" data-widx="${idx}">
-                <div class="karaoke-word-base" style="color:${c.fillBefore}; text-shadow:${baseShadow};">${baseInner}</div>
-                <div class="karaoke-word-active" style="color:${c.fillAfter}; text-shadow:${activeShadow};">${activeInner}</div>
-            </div>`;
+            return `<div class="karaoke-word-wrapper" data-widx="${idx}"><div class="karaoke-word-base" style="color:${c.fillBefore}; text-shadow:${baseShadow};">${baseInner}</div><div class="karaoke-word-active" style="color:${c.fillAfter}; text-shadow:${activeShadow};">${activeInner}</div></div>`;
         }).join("");
+
+        return `<span class="lyric-line-bg"${wrapperStyle}>${wordsHtml}</span>`;
     }
 
     function togglePlay() {
         if (video.ended) return;
         if (video.paused) {
-            video.play(); playBtn.innerText = "暂停";
-            hud.innerText = `${currentMetadata.title} [状态: 播放中]`;
+            if (titleTimer) {
+                clearTimeout(titleTimer);
+                titleTimer = null;
+                if (!isPreviewMode) titleOverlay.classList.remove('active');
+            }
+            video.play();
+            if (vocalAudio.src) vocalAudio.play();
+            playBtn.innerText = "暂停";
+            updateHudDisplay();
         } else {
-            video.pause(); playBtn.innerText = "暂停";
+            video.pause();
+            if (vocalAudio.src) vocalAudio.pause();
+            playBtn.innerText = "暂停";
             hud.innerText = `${currentMetadata.title} [状态: 已暂停]`;
         }
+    }
+
+    function restartSong() {
+        if (titleTimer) clearTimeout(titleTimer);
+
+        video.currentTime = 0;
+        if (vocalAudio.src) vocalAudio.currentTime = 0;
+        video.pause();
+        if (vocalAudio.src) vocalAudio.pause();
+
+        playBtn.disabled = false;
+        playBtn.innerText = "暂停";
+
+        titleOverlay.classList.add('active');
+        hud.innerText = `${currentMetadata.title} [准备播放...]`;
+
+        titleTimer = setTimeout(() => {
+            if (!isPreviewMode) {
+                titleOverlay.classList.remove('active');
+            }
+            video.play().catch(err => console.log("重新播放受阻:", err));
+            if (vocalAudio.src) {
+                vocalAudio.play().catch(err => console.log("原唱轨同步受阻:", err));
+            }
+            updateHudDisplay();
+        }, 3000);
     }
 
     function seek(e) {
         const rect = e.currentTarget.getBoundingClientRect();
         const pos = (e.clientX - rect.left) / rect.width;
         if (!isNaN(video.duration)) {
-            video.currentTime = pos * video.duration;
-            if (video.ended) { playBtn.disabled = false; playBtn.innerText = "暂停"; video.play(); }
+            if (titleTimer) {
+                clearTimeout(titleTimer);
+                titleTimer = null;
+                if (!isPreviewMode) titleOverlay.classList.remove('active');
+            }
+
+            const t = pos * video.duration;
+            video.currentTime = t;
+            if (vocalAudio.src) vocalAudio.currentTime = t;
+            if (video.ended) { 
+                playBtn.disabled = false; 
+                playBtn.innerText = "暂停"; 
+                video.play(); 
+                if (vocalAudio.src) vocalAudio.play();
+            }
         }
     }
 
@@ -655,13 +1803,6 @@
         const s = Math.floor(sec % 60).toString().padStart(2, '0');
         return `${m}:${s}`;
     }
-
-    ipcRenderer.on('MENU_COMMAND', (event, cmd) => {
-        if (cmd === 'TOGGLE_PLAY') togglePlay();
-        else if (cmd === 'RESTART') { 
-            video.currentTime = 0; playBtn.disabled = false; playBtn.innerText = "暂停"; video.play(); 
-        }
-    });
 </script>
 </body>
 </html>

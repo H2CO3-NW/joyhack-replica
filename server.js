@@ -16,7 +16,9 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 let playQueue = [];
+let playHistory = [];
 let customSongsDir = null;
+let currentPitchVal = 0;
 
 function getLocalIP() {
     const interfaces = os.networkInterfaces();
@@ -234,6 +236,7 @@ app.post('/api/queue', (req, res) => {
 
     playQueue.push(songItem);
     broadcastQueueUpdate();
+    io.emit('song-booked-notify', songItem);
     res.json({ success: true, queue: playQueue });
 });
 
@@ -272,6 +275,14 @@ app.post('/api/queue/play-now', (req, res) => {
 app.delete('/api/queue/:index', (req, res) => {
     const idx = parseInt(req.params.index, 10);
     if (!isNaN(idx) && idx >= 0 && idx < playQueue.length) {
+        if (idx === 0) {
+            const playedSong = { ...playQueue[0], playedAt: Date.now() };
+            playHistory.unshift(playedSong);
+            if (playHistory.length > 100) {
+                playHistory = playHistory.slice(0, 100);
+            }
+            io.emit('update-history', playHistory);
+        }
         playQueue.splice(idx, 1);
         broadcastQueueUpdate();
         res.json({ success: true, queue: playQueue });
@@ -280,14 +291,27 @@ app.delete('/api/queue/:index', (req, res) => {
     }
 });
 
+app.get('/api/history', (req, res) => {
+    res.json(playHistory);
+});
+
+app.delete('/api/history', (req, res) => {
+    playHistory = [];
+    io.emit('update-history', playHistory);
+    res.json({ success: true, history: playHistory });
+});
+
 io.on('connection', (socket) => {
     socket.emit('update-queue', playQueue);
+    socket.emit('update-history', playHistory);
+    socket.emit('broadcast-pitch', currentPitchVal);
 
     socket.on('send-command', (cmd) => {
         io.emit('broadcast-command', cmd);
     });
 
     socket.on('change-pitch', (pitchVal) => {
+        currentPitchVal = pitchVal;
         if (playQueue.length > 0) {
             playQueue[0].pitch = pitchVal;
             broadcastQueueUpdate();

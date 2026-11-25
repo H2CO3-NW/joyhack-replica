@@ -9,16 +9,16 @@
         * { box-sizing: border-box; margin: 0; padding: 0; }
         
         html, body { 
-            height: 100%;
-            height: 100dvh;
+            min-height: 100vh;
             width: 100%;
             background-color: #121212; 
             color: #fff; 
             font-family: "Microsoft YaHei", -apple-system, BlinkMacSystemFont, sans-serif; 
-            display: flex; flex-direction: column; overflow: hidden;
+            display: flex; flex-direction: column;
         }
 
         .header { 
+            position: sticky; top: 0; z-index: 100;
             background: #1a1a1a; 
             padding: 12px 20px; 
             padding-top: max(12px, env(safe-area-inset-top));
@@ -28,15 +28,15 @@
         .title { font-size: 18px; font-weight: bold; color: #00ffff; }
         .queue-badge { font-size: 13px; background: #ff007f; color: #fff; padding: 2px 8px; border-radius: 10px; font-weight: bold; }
 
-        .content-container { flex: 1; position: relative; overflow: hidden; width: 100%; }
+        .content-container { flex: 1; width: 100%; }
         .tab-content { 
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            display: none; padding: 15px; overflow-y: auto; flex-direction: column; 
-            -webkit-overflow-scrolling: touch;
+            display: none; padding: 15px 15px calc(75px + env(safe-area-inset-bottom)) 15px;
+            width: 100%;
         }
-        .tab-content.active { display: flex; }
+        .tab-content.active { display: block; }
 
         .breadcrumb-bar {
+            position: sticky; top: 48px; z-index: 90;
             display: flex; align-items: center; justify-content: space-between;
             background: #1a2a2a; border: 1px solid #00ffff; border-radius: 8px;
             padding: 10px 14px; margin-bottom: 12px; font-size: 14px; color: #00ffff; font-weight: bold;
@@ -62,23 +62,26 @@
             background: #1e1e1e; border: 1px solid #333; border-left: 6px solid #00ffff;
             padding: 20px 20px; border-radius: 8px; display: flex; justify-content: space-between;
             align-items: center; cursor: pointer; transition: all 0.2s;
+            touch-action: manipulation; -webkit-tap-highlight-color: transparent;
         }
         .main-menu-card:active { background: #2a2a2a; transform: scale(0.98); }
-        .main-menu-title { font-size: 18px; font-weight: bold; color: #fff; }
-        .main-menu-arrow { font-size: 18px; color: #00ffff; font-weight: bold; }
+        .main-menu-title { font-size: 18px; font-weight: bold; color: #fff; pointer-events: none; }
+        .main-menu-arrow { font-size: 18px; color: #00ffff; font-weight: bold; pointer-events: none; }
 
         .group-card {
             background: #1f1f1f; border-left: 4px solid #ff007f; padding: 16px 18px;
             border-radius: 6px; display: flex; justify-content: space-between; align-items: center;
             cursor: pointer; transition: background 0.2s;
+            touch-action: manipulation; -webkit-tap-highlight-color: transparent;
         }
         .group-card:active { background: #2a2a2a; transform: scale(0.98); }
-        .group-name { font-size: 16px; font-weight: bold; color: #fff; }
-        .group-count { font-size: 13px; color: #aaa; background: #333; padding: 3px 10px; border-radius: 12px; }
+        .group-name { font-size: 16px; font-weight: bold; color: #fff; pointer-events: none; }
+        .group-count { font-size: 13px; color: #aaa; background: #333; padding: 3px 10px; border-radius: 12px; pointer-events: none; }
 
         .song-card { 
             background: #222; border-left: 4px solid #00ffff; padding: 12px 15px; 
             border-radius: 6px; display: flex; justify-content: space-between; align-items: center; gap: 10px;
+            touch-action: manipulation;
         }
         .song-info-box { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
         .song-title { font-size: 16px; font-weight: bold; color: #fff; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -109,6 +112,35 @@
         .btn-q-del { background: #d9534f; }
         .btn-q:active { opacity: 0.8; }
 
+        .history-header {
+            display: flex; justify-content: space-between; align-items: center;
+            background: #1e1e1e; padding: 12px 16px; border-radius: 8px;
+            margin-bottom: 12px; border: 1px solid #333; flex-shrink: 0;
+        }
+        .history-count { font-size: 14px; color: #00ffff; font-weight: bold; }
+        .btn-clear-history {
+            background: #333; color: #ff6b6b; border: 1px solid #555;
+            padding: 6px 12px; font-size: 13px; font-weight: bold; border-radius: 4px;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .btn-clear-history:active { transform: scale(0.96); background: #444; }
+        .history-list { display: flex; flex-direction: column; gap: 10px; padding-bottom: 20px; }
+        .history-item {
+            background: #222; padding: 12px 15px; border-radius: 6px;
+            display: flex; justify-content: space-between; align-items: center;
+            border-left: 4px solid #00ffff; gap: 10px;
+        }
+        .history-info { display: flex; flex-direction: column; gap: 4px; overflow: hidden; flex: 1; }
+        .history-title { font-size: 15px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; }
+        .history-meta { font-size: 12px; color: #aaa; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .history-time { color: #888; font-size: 11px; }
+        .btn-reorder {
+            background: #00ffff; color: #000; border: none; padding: 8px 14px;
+            font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 14px;
+            flex-shrink: 0;
+        }
+        .btn-reorder:active { transform: scale(0.96); }
+
         .control-panel { display: flex; flex-direction: column; gap: 15px; padding: 5px 0 20px 0; }
         .quick-btns { display: flex; flex-direction: column; gap: 10px; }
         .btn-ctrl { border: none; padding: 14px; font-size: 16px; font-weight: bold; cursor: pointer; border-radius: 8px; width: 100%; }
@@ -133,10 +165,11 @@
         .volume-slider { width: 60%; accent-color: #00ffff; cursor: pointer; height: 6px; }
 
         .tab-bar { 
+            position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
             background: #1a1a1a; 
             border-top: 1px solid #2a2a2a; 
             display: flex; justify-content: space-around; align-items: center; 
-            flex-shrink: 0; z-index: 100; width: 100%;
+            width: 100%;
             padding-bottom: env(safe-area-inset-bottom);
         }
         .tab-item { 
@@ -200,6 +233,7 @@
                 <div class="quick-btns">
                     <button class="btn-ctrl btn-cyan" onclick="sendCommand('TOGGLE_PLAY')">⏯ 播放 / 暂停</button>
                     <button class="btn-ctrl btn-pink" onclick="sendCommand('NEXT_SONG')">⏭ 切歌 (下一首)</button>
+                    <button class="btn-ctrl btn-cyan" onclick="sendCommand('RESTART'); showToast('已发送指令：重唱 (从头开始)');">🔄 重唱 (从头开始)</button>
                     <button class="btn-ctrl btn-yellow" onclick="sendCommand('TOGGLE_VOCAL')">🎤 伴唱 / 原唱 切换</button>
                 </div>
 
@@ -232,6 +266,15 @@
                     <input type="range" min="0" max="1" step="0.01" value="1" class="volume-slider" id="volumeSlider" oninput="changeVolume(this.value)">
                 </div>
             </div>
+        </div>
+
+        <!-- TAB 4: 点歌履历界面 -->
+        <div class="tab-content" id="tabHistory">
+            <div class="history-header">
+                <span class="history-count" id="historyCount">已唱履历: 0 首</span>
+                <button class="btn-clear-history" onclick="clearHistory()">🗑 清空履历</button>
+            </div>
+            <div class="history-list" id="historyList"></div>
         </div>
     </div>
 
@@ -266,6 +309,10 @@
             <span class="tab-icon">🎛</span>
             <span>播放控制</span>
         </div>
+        <div class="tab-item" onclick="switchTab('tabHistory', this)">
+            <span class="tab-icon">🕒</span>
+            <span>点歌履历</span>
+        </div>
     </div>
 
 <script>
@@ -273,14 +320,25 @@
     let allSongs = [];
     let currentPitch = 0;
     let selectedSongObj = null;
+    let lastLocalBookedFile = null;
+    let lastLocalBookedAt = 0;
 
     let currentLevel = 1; 
     let selectedMode = null; 
     let selectedGroupKey = null; 
+    const navHistoryStack = [];
 
     const jaCollator = new Intl.Collator('ja-JP', { numeric: true, sensitivity: 'base' });
 
-    function showToast(message, isError = false) {
+    function getCurrentScrollPos() {
+        return window.scrollY || document.documentElement.scrollTop || 0;
+    }
+
+    function restoreScrollPos(pos = 0) {
+        window.scrollTo(0, Math.max(0, pos || 0));
+    }
+
+    function showToast(message, isError = false, duration = 2200) {
         const container = document.getElementById('toastContainer');
         const toast = document.createElement('div');
         toast.className = `toast ${isError ? 'error' : ''}`;
@@ -291,8 +349,16 @@
         setTimeout(() => {
             toast.classList.remove('show');
             setTimeout(() => toast.remove(), 300);
-        }, 2200);
+        }, duration);
     }
+
+    socket.on('song-booked-notify', (song) => {
+        if (!song || !song.title) return;
+        const isSelfJustBooked = (song.txtFile === lastLocalBookedFile && (Date.now() - lastLocalBookedAt < 2500));
+        if (isSelfJustBooked) return;
+        const singerStr = (song.singer && song.singer !== 'N/A') ? ` (${song.singer})` : '';
+        showToast(`🎵 新点播: 《${song.title}》${singerStr}`, false, 3000);
+    });
 
     function switchTab(tabId, element) {
         document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -300,6 +366,7 @@
         
         document.getElementById(tabId).classList.add('active');
         element.classList.add('active');
+        window.scrollTo(0, 0);
     }
 
     function sendCommand(cmd) {
@@ -359,6 +426,93 @@
             renderView();
         } catch (e) {
             console.error("加载曲库失败:", e);
+        }
+    }
+
+    async function loadHistory() {
+        try {
+            const res = await fetch(`/api/history?t=${new Date().getTime()}`);
+            const history = await res.json();
+            renderHistory(history);
+        } catch (e) {
+            console.error("加载履历失败:", e);
+        }
+    }
+
+    socket.on('update-history', (history) => {
+        renderHistory(history);
+    });
+
+    function formatPlayedTime(timestamp) {
+        if (!timestamp) return '';
+        const d = new Date(timestamp);
+        const m = (d.getMonth() + 1).toString().padStart(2, '0');
+        const day = d.getDate().toString().padStart(2, '0');
+        const h = d.getHours().toString().padStart(2, '0');
+        const min = d.getMinutes().toString().padStart(2, '0');
+        return `${m}-${day} ${h}:${min}`;
+    }
+
+    function renderHistory(history) {
+        const historyElem = document.getElementById('historyList');
+        const countElem = document.getElementById('historyCount');
+        if (!historyElem || !countElem) return;
+
+        const list = Array.isArray(history) ? history : [];
+        countElem.innerText = `已唱履历: ${list.length} 首`;
+        historyElem.innerHTML = '';
+
+        if (list.length === 0) {
+            historyElem.innerHTML = '<div style="color: #666; text-align: center; padding: 40px 20px;">暂无点歌履历</div>';
+            return;
+        }
+
+        list.forEach((song) => {
+            const item = document.createElement('div');
+            item.className = 'history-item';
+
+            const pitchVal = typeof song.pitch === 'number' ? song.pitch : 0;
+            const pitchStr = pitchVal !== 0 ? (pitchVal > 0 ? `+${pitchVal}` : `${pitchVal}`) : '';
+            const pitchBadge = pitchStr ? `<span class="pitch-tag">Key: ${pitchStr}</span>` : '';
+
+            const timeStr = formatPlayedTime(song.playedAt);
+
+            const info = document.createElement('div');
+            info.className = 'history-info';
+            info.innerHTML = `
+                <div class="history-title">${escapeHtml(song.title || '未知歌名')}</div>
+                <div class="history-meta">
+                    <span>歌手: ${escapeHtml(song.singer || '未知')}</span>
+                    ${pitchBadge}
+                    ${timeStr ? `<span class="history-time">🕒 ${escapeHtml(timeStr)}</span>` : ''}
+                </div>
+            `;
+
+            const btnReorder = document.createElement('button');
+            btnReorder.className = 'btn-reorder';
+            btnReorder.innerText = '再点';
+            btnReorder.title = '按原 Key 重新加入队列';
+            btnReorder.addEventListener('click', () => {
+                directOrderSong(song, pitchVal);
+            });
+
+            item.appendChild(info);
+            item.appendChild(btnReorder);
+            historyElem.appendChild(item);
+        });
+    }
+
+    async function clearHistory() {
+        if (!confirm('确定要清空所有点歌履历吗？')) return;
+        try {
+            const res = await fetch('/api/history', { method: 'DELETE' });
+            if (res.ok) {
+                showToast('点歌履历已清空');
+            } else {
+                showToast('清空履历失败', true);
+            }
+        } catch (e) {
+            showToast('网络错误', true);
         }
     }
 
@@ -487,6 +641,15 @@
     }
 
     function enterCategory(mode) {
+        // 进入下一级前记录当前父级滚动位置并压栈
+        const currentPos = getCurrentScrollPos();
+        navHistoryStack.push({
+            level: currentLevel,
+            mode: selectedMode,
+            groupKey: selectedGroupKey,
+            scrollTop: currentPos
+        });
+
         selectedMode = mode;
         selectedGroupKey = null;
         document.getElementById('searchInput').value = '';
@@ -497,34 +660,65 @@
             currentLevel = 2;
         }
         renderView();
+        restoreScrollPos(0);
     }
 
     function enterGroup(groupKey) {
+        // 进入下一级前记录当前父级滚动位置并压栈
+        const currentPos = getCurrentScrollPos();
+        navHistoryStack.push({
+            level: currentLevel,
+            mode: selectedMode,
+            groupKey: selectedGroupKey,
+            scrollTop: currentPos
+        });
+
         selectedGroupKey = groupKey;
         document.getElementById('searchInput').value = '';
         currentLevel = 3;
         renderView();
+        restoreScrollPos(0);
     }
 
     function navigateBack() {
         document.getElementById('searchInput').value = '';
-        if (currentLevel === 3) {
-            if (selectedMode === 'ALL') {
+        
+        let savedScrollTop = 0;
+        if (navHistoryStack.length > 0) {
+            const prevState = navHistoryStack.pop();
+            currentLevel = prevState.level;
+            selectedMode = prevState.mode;
+            selectedGroupKey = prevState.groupKey;
+            savedScrollTop = prevState.scrollTop || 0;
+        } else {
+            // 保底逻辑
+            if (currentLevel === 3) {
+                if (selectedMode === 'ALL') {
+                    currentLevel = 1;
+                    selectedMode = null;
+                } else {
+                    currentLevel = 2;
+                    selectedGroupKey = null;
+                }
+            } else if (currentLevel === 2) {
                 currentLevel = 1;
                 selectedMode = null;
-            } else {
-                currentLevel = 2;
-                selectedGroupKey = null;
             }
-        } else if (currentLevel === 2) {
-            currentLevel = 1;
-            selectedMode = null;
         }
+
+        if (currentLevel === 1) {
+            navHistoryStack.length = 0;
+            savedScrollTop = 0;
+        }
+
         renderView();
+        restoreScrollPos(savedScrollTop);
     }
 
     function handleSearchInput() {
+        // 搜索框过滤时属于局部检索，重置滚动位置
         renderView();
+        restoreScrollPos(0);
     }
 
     function renderView() {
@@ -550,11 +744,11 @@
             menus.forEach(menu => {
                 const card = document.createElement('div');
                 card.className = 'main-menu-card';
+                card.dataset.categoryId = menu.id;
                 card.innerHTML = `
                     <div class="main-menu-title">${menu.name}</div>
                     <div class="main-menu-arrow">❯</div>
                 `;
-                card.addEventListener('click', () => enterCategory(menu.id));
                 listElem.appendChild(card);
             });
             return;
@@ -614,11 +808,11 @@
                 const count = groupMap.get(groupName);
                 const card = document.createElement('div');
                 card.className = 'group-card';
+                card.dataset.groupKey = groupName;
                 card.innerHTML = `
                     <div class="group-name">${escapeHtml(groupName)}</div>
                     <div class="group-count">${count} 首</div>
                 `;
-                card.addEventListener('click', () => enterGroup(groupName));
                 listElem.appendChild(card);
             });
             return;
@@ -704,6 +898,8 @@
     }
 
     async function directOrderSong(songObj, pitchVal = 0) {
+        lastLocalBookedFile = songObj.txtFile;
+        lastLocalBookedAt = Date.now();
         try {
             const res = await fetch('/api/queue', {
                 method: 'POST',
@@ -719,9 +915,14 @@
             });
 
             if (res.ok) {
-                showToast(`已点: ${songObj.title}`);
+                showToast(`已点: ${songObj.title}`, false, 3000);
             } else {
-                showToast(`点歌失败`, true);
+                let errMsg = '点歌失败';
+                try {
+                    const data = await res.json();
+                    if (data && data.error) errMsg = data.error;
+                } catch (_) {}
+                showToast(errMsg, true);
             }
         } catch (e) {
             showToast("网络错误", true);
@@ -752,8 +953,29 @@
         return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     }
 
+    function initSongListEvents() {
+        const listElem = document.getElementById('songList');
+        if (!listElem) return;
+
+        listElem.addEventListener('click', (e) => {
+            const mainCard = e.target.closest('.main-menu-card');
+            if (mainCard && mainCard.dataset.categoryId) {
+                enterCategory(mainCard.dataset.categoryId);
+                return;
+            }
+
+            const groupCard = e.target.closest('.group-card');
+            if (groupCard && groupCard.dataset.groupKey !== undefined) {
+                enterGroup(groupCard.dataset.groupKey);
+                return;
+            }
+        });
+    }
+
     window.addEventListener('DOMContentLoaded', () => {
+        initSongListEvents();
         loadSongs();
+        loadHistory();
     });
 </script>
 </body>

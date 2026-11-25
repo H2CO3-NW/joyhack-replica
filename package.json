@@ -1,11 +1,12 @@
 {
   "name": "joyhack-replica",
-  "version": "0.8.9",
+  "version": "0.9.0",
   "description": "JoyHack Karaoke Player Engine and Web Server",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder --win --x64",
+    "build:linux": "electron-builder --linux AppImage --x64",
     "dist": "electron-builder",
     "pack": "electron-builder --dir"
   },
@@ -31,6 +32,18 @@
       "!server-stable.js",
       "!public/admin-stable.html"
     ],
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "AudioVideo",
+      "executableName": "joyhack-player"
+    },
     "win": {
       "target": [
         "zip",

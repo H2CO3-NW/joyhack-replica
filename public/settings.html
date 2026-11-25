@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>首选项 / 设置</title>
+    <style>
+        body { background: #1e1e1e; color: #fff; font-family: "Microsoft YaHei", sans-serif; padding: 20px; margin: 0; }
+        .section { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-size: 14px; color: #aaa; }
+        .path-box { display: flex; gap: 8px; }
+        input[type="text"] { flex: 1; padding: 6px 10px; background: #2d2d2d; border: 1px solid #444; color: #00ffff; font-size: 13px; border-radius: 4px; }
+        button { padding: 6px 14px; background: #00ffff; color: #000; border: none; font-weight: bold; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #00cccc; }
+        .btn-block { width: 100%; padding: 10px; margin-top: 10px; background: #ff007f; color: #fff; font-size: 14px; }
+        .btn-block:hover { background: #cc0066; }
+    </style>
+</head>
+<body>
+    <div class="section">
+        <label>曲库文件夹路径：</label>
+        <div class="path-box">
+            <input type="text" id="libPathInput" readonly placeholder="读取中...">
+            <button onclick="selectDirectory()">浏览...</button>
+        </div>
+    </div>
+
+    <div class="section">
+        <label>快捷操作：</label>
+        <button class="btn-block" onclick="openAdmin()">打开网页点歌后台 (http://localhost:3000/admin)</button>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        const API_BASE = 'http://127.0.0.1:3000';
+
+        async function fetchCurrentPath() {
+            try {
+                const res = await fetch(`${API_BASE}/api/library-path`);
+                const data = await res.json();
+                document.getElementById('libPathInput').value = data.path || '';
+            } catch (e) {
+                console.error("读取路径失败", e);
+                document.getElementById('libPathInput').value = "获取服务失败，请确认后端已启动";
+            }
+        }
+        fetchCurrentPath();
+
+        function selectDirectory() {
+            ipcRenderer.send('SELECT_LIBRARY_DIR');
+        }
+
+        ipcRenderer.on('SELECTED_LIBRARY_DIR', async (event, dirPath) => {
+            document.getElementById('libPathInput').value = dirPath;
+            await fetch(`${API_BASE}/api/library-path`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ newPath: dirPath })
+            });
+        });
+
+        function openAdmin() {
+            ipcRenderer.send('OPEN_ADMIN_BROWSER');
+        }
+    </script>
+</body>
+</html>

@@ -140,6 +140,48 @@
             border: 1px solid #7f9db9; background: #fff; resize: vertical; outline: none;
         }
 
+        /* 補正值测算向导样式 */
+        .wizard-section {
+            background: #fff; border: 1px solid #7f9db9; padding: 8px 10px; border-radius: 2px;
+            display: flex; flex-direction: column; gap: 6px;
+        }
+        .wizard-section-title {
+            font-weight: bold; font-size: 11px; color: #000088; border-bottom: 1px dashed #d4d0c8; padding-bottom: 3px;
+        }
+        .wizard-row {
+            display: flex; align-items: center; gap: 8px; font-size: 11px;
+        }
+        .wizard-select {
+            flex: 1; background: #fff; border: 1px solid #7f9db9; padding: 2px 4px; font-size: 11px; height: 22px; outline: none;
+        }
+        .wizard-tc-input {
+            width: 80px; font-family: "Consolas", monospace; font-size: 12px; font-weight: bold; text-align: center;
+            border: 1px solid #7f9db9; height: 22px; padding: 2px;
+        }
+        .wizard-player-bar {
+            background: #f0ede0; border: 1px solid #d4d0c8; padding: 6px 8px; display: flex; align-items: center; gap: 6px;
+        }
+        .wizard-display-tc {
+            font-family: "Consolas", monospace; font-size: 15px; font-weight: bold; color: #00ffff; background: #000;
+            padding: 2px 8px; border: inset 1px #7f9db9; letter-spacing: 1px; min-width: 86px; text-align: center;
+        }
+        .btn-capture-big {
+            background: #e1e9f5; border: 2px outset #316ac5; color: #002266; font-size: 13px; font-weight: bold;
+            padding: 8px 12px; cursor: pointer; text-align: center; border-radius: 3px; transition: background 0.1s;
+        }
+        .btn-capture-big:hover { background: #d0e0f8; }
+        .btn-capture-big:active { background: #b8d2f4; border-style: inset; }
+        .wizard-result-box {
+            background: #f7f9fa; border: 1px solid #b0c4de; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px;
+        }
+        .wizard-result-grid {
+            display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 4px 8px; align-items: center; font-size: 11px;
+        }
+        .wizard-fix-banner {
+            font-size: 14px; font-weight: bold; font-family: "Consolas", monospace; padding: 4px 6px; background: #e8f4fc;
+            border: 1px solid #316ac5; color: #003399; display: flex; justify-content: space-between; align-items: center;
+        }
+
         /* 颜色可视化选择器样式 */
         .color-palette-grid {
             display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
@@ -181,6 +223,40 @@
         }
         .color-code-display {
             font-family: monospace; font-size: 12px; background: #fff; border: 1px solid #7f9db9; padding: 4px 6px; user-select: all;
+        }
+
+        /* 拖拽悬停视觉提示框 */
+        .drag-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(236, 233, 216, 0.88);
+            border: 4px dashed #316ac5;
+            z-index: 9999;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none;
+        }
+        .drag-overlay.active {
+            display: flex;
+        }
+        .drag-overlay-box {
+            background: #ffffff;
+            border: 2px solid #316ac5;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+            padding: 20px 36px;
+            border-radius: 6px;
+            text-align: center;
+            pointer-events: none;
+        }
+        .drag-overlay-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #004085;
+            margin-bottom: 6px;
+        }
+        .drag-overlay-subtitle {
+            font-size: 12px;
+            color: #666;
         }
     </style>
 </head>
@@ -235,6 +311,7 @@
             <div class="meta-row">
                 <span class="meta-label">補正</span>
                 <input type="text" class="meta-input" id="metaFix" value="-00:00:00" style="font-family: monospace;" oninput="markDirty()">
+                <button class="btn-browse" onclick="openOffsetWizard()">測算</button>
             </div>
         </div>
 
@@ -424,6 +501,84 @@
         </div>
     </div>
 
+    <!-- 补正值测算向导弹窗 (Offset Wizard) -->
+    <div class="modal-overlay" id="offsetWizardModal">
+        <div class="modal-card modal-card-wide">
+            <div class="modal-header">
+                <span>補正値 聴音測定ウィザード (Offset Wizard)</span>
+                <span style="cursor: pointer; font-size: 14px;" onclick="closeOffsetWizard()">✕</span>
+            </div>
+
+            <!-- 1. 基准参考行选择 -->
+            <div class="wizard-section">
+                <div class="wizard-section-title">1. 基準行の選択 (指定已有时间戳)</div>
+                <div style="font-size: 11px; color: #555;">
+                    请选择一句你准备对照的歌词作为基准点（通常选择前奏结束后第一句具有明显起唱特征的歌词）：
+                </div>
+                <div class="wizard-row">
+                    <select class="wizard-select" id="wizardLyricSelect" onchange="onWizardSelectChange(this.value)">
+                    </select>
+                </div>
+                <div class="wizard-row" style="margin-top: 2px;">
+                    <span style="color: #333;">目標原時間コード (T_target):</span>
+                    <input type="text" class="wizard-tc-input" id="wizardTargetTc" oninput="onWizardTargetInput(this.value)">
+                    <span style="color: #666; font-size: 10px;">(格式: MM:SS:FF，60fps 基準)</span>
+                </div>
+            </div>
+
+            <!-- 2. 音频试听与控制 -->
+            <div class="wizard-section">
+                <div class="wizard-section-title">2. 試聴とシーク (拖拽到起唱前准备试听)</div>
+                <div class="wizard-player-bar">
+                    <button class="ctrl-btn" id="wizardPlayPauseBtn" onclick="wizardTogglePlay()" title="再生 / 一時停止">▶</button>
+                    <button class="ctrl-btn" onclick="wizardSeekRelative(-5)" title="-5秒">-5s</button>
+                    <button class="ctrl-btn" onclick="wizardSeekRelative(5)" title="+5秒">+5s</button>
+                    <div class="wizard-display-tc" id="wizardCurrentTc">00:00:00</div>
+                    <input type="range" class="slider-progress" id="wizardProgressSlider" value="0" max="100" step="0.01" oninput="wizardSeekByPercent(this.value)">
+                </div>
+            </div>
+
+            <!-- 3. Enter 捕获打点按键 -->
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+                <button type="button" class="btn-capture-big" onclick="wizardCaptureActualTime()">
+                    🎯 听到歌词开始时按 [Enter] 捕获（或点击此处捕获）
+                </button>
+                <div style="font-size: 11px; color: #666; text-align: center;">
+                    💡 提示：向导打开期间，全局 [Enter] 键已被拦截为听音捕获。听到基准句开唱瞬间直接敲击键盘 Enter 即可精确捕获并自动暂停！
+                </div>
+            </div>
+
+            <!-- 4. 测算对比与结果展示 -->
+            <div class="wizard-result-box" id="wizardResultBox">
+                <div class="wizard-section-title">3. 測定結果と補正値の算出</div>
+                <div class="wizard-result-grid">
+                    <span style="color: #555;">原歌词時間 (T_target):</span>
+                    <span id="wizardResTarget" style="font-family: monospace; font-weight: bold; color: #000;">--:--:--</span>
+                    <span style="color: #555;">実測時間 (T_actual):</span>
+                    <span id="wizardResActual" style="font-family: monospace; font-weight: bold; color: #0000cc;">--:--:--</span>
+                </div>
+                <div class="wizard-fix-banner" style="margin-top: 4px;">
+                    <div>算出された補正値: <span id="wizardResFix" style="color: #d90000; font-size: 16px;">-00:00:00</span></div>
+                    <div id="wizardResNote" style="font-size: 11px; font-weight: normal; color: #333;">尚未测算</div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn-tool" id="wizardBtnApply" onclick="applyOffsetWizardResult()" style="font-weight: bold; color: #000088;" disabled>✅ 確認して補正欄に入力</button>
+                <button class="btn-tool" onclick="wizardResetMeasurement()">再測定</button>
+                <button class="btn-tool" onclick="closeOffsetWizard()">キャンセル</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 拖拽悬停视觉提示框 -->
+    <div class="drag-overlay" id="dragOverlay">
+        <div class="drag-overlay-box">
+            <div class="drag-overlay-title">📂 释放以载入歌词或音视频文件</div>
+            <div class="drag-overlay-subtitle">支持 .txt 歌词文件，以及 .mp3 / .wav / .m4a / .mp4 / .mkv 音视频伴奏</div>
+        </div>
+    </div>
+
 <script>
     const { ipcRenderer } = require('electron');
     const fs = require('fs');
@@ -459,6 +614,7 @@
 
     function markDirty() {
         isDirty = true;
+        ipcRenderer.send('SET_EDITOR_DIRTY', true);
         updateHeaderTitle();
     }
 
@@ -840,10 +996,26 @@
 
         if (e.code === 'Space') {
             e.preventDefault();
-            togglePlay();
+            if (isWizardOpen) {
+                wizardTogglePlay();
+            } else {
+                togglePlay();
+            }
         } else if (e.code === 'Enter') {
             e.preventDefault();
-            recordStampAndAdvance();
+            if (isWizardOpen) {
+                wizardCaptureActualTime();
+            } else {
+                recordStampAndAdvance();
+            }
+        } else if (e.code === 'Escape') {
+            if (isWizardOpen) {
+                e.preventDefault();
+                closeOffsetWizard();
+            }
+        } else if (isWizardOpen) {
+            // 当向导打开时，屏蔽打轴模式的其它快捷键（如上下行移动、删除、微调），避免意外破坏歌词表格
+            return;
         } else if (e.code === 'Delete' || e.key === 'Delete') {
             e.preventDefault();
             if (tableData.length > 1) {
@@ -1105,6 +1277,7 @@
         a.click();
         URL.revokeObjectURL(url);
         isDirty = false;
+        ipcRenderer.send('SET_EDITOR_DIRTY', false);
         updateHeaderTitle();
     }
 
@@ -1116,6 +1289,7 @@
         currentFilePath = "";
         currentFileName = "Untitled.txt";
         isDirty = false;
+        ipcRenderer.send('SET_EDITOR_DIRTY', false);
 
         document.getElementById('metaTitle').value = "";
         document.getElementById('metaKana').value = "";
@@ -1138,16 +1312,88 @@
     }
 
     /**
-     * 读取与反解现有 JoyHack 歌词文件 (完全对齐 RecENT fileOpen / mainSearch 逻辑)
+     * 读取与反解现有 JoyHack 歌词文件或纯歌词草稿文本 (完全对齐 RecENT fileOpen / mainSearch 逻辑)
      */
     function parseJoyHackText(text, filePath = "", fileName = "") {
         currentFilePath = filePath;
         currentFileName = fileName || (filePath ? path.basename(filePath) : "Untitled.txt");
         isDirty = false;
+        ipcRenderer.send('SET_EDITOR_DIRTY', false);
 
+        // 清理零宽字符、BOM 与非法空字节残留
+        const cleanText = (text || '').replace(/[\u200B-\u200D\uFEFF\0]/g, '');
+
+        // 判断是否为包含 JoyHack 专用标签的文件
+        const hasJoyHackTags = /<(?:title|singer|lyrics|music|works|render|year|author|timeCodeFix|searchKey|titleimage|source|time|clear)\b/i.test(cleanText);
+
+        if (!hasJoyHackTags) {
+            // === 纯歌词草稿 .txt 处理模式 ===
+            // 清空/重置元数据字段为默认值，严禁因缺少元数据阻断歌词载入
+            document.getElementById('metaTitle').value = currentFileName ? currentFileName.replace(/\.[^/.]+$/, "") : "";
+            document.getElementById('metaKana').value = "";
+            document.getElementById('metaSinger').value = "";
+            document.getElementById('metaWorks').value = "";
+            document.getElementById('metaMusic').value = "";
+            document.getElementById('metaLyrics').value = "";
+            document.getElementById('metaSource').value = "";
+            document.getElementById('metaAuthor').value = "";
+            document.getElementById('metaYear').value = "";
+            document.getElementById('metaFix').value = "-00:00:00";
+            document.getElementById('metaExtraTitle').value = "";
+
+            rawHeaderMeta.version = '2.1.0';
+            rawHeaderMeta.render = '';
+            rawHeaderMeta.searchKey = '';
+            rawHeaderMeta.titleimage = '';
+
+            tableData = [
+                { time: "00:00:00", lyric: "<clear>", ruby: "" }
+            ];
+
+            // 逐行拆分（兼容 \r\n 和 \n），仅剔除文件末尾多余的尾随空行，保留中间空行作为占位
+            let rawLines = cleanText.split(/\r?\n/);
+            while (rawLines.length > 0 && rawLines[rawLines.length - 1].trim() === '') {
+                rawLines.pop();
+            }
+
+            rawLines.forEach(line => {
+                // 如果是中间空行，保留作为占位行（等待打轴或段落间隔）
+                if (line.trim() === '') {
+                    tableData.push({ time: "", lyric: "", ruby: "" });
+                    tableData.push({ time: "", lyric: "/", ruby: "" });
+                    return;
+                }
+
+                // 如果行内含有制表符 Tab，拆分为各词块
+                if (line.includes('\t')) {
+                    const parts = line.split('\t');
+                    parts.forEach(p => {
+                        const cleanP = p.replace(/\r\n|\r|\n/g, '');
+                        if (cleanP) tableData.push({ time: "", lyric: cleanP, ruby: "" });
+                    });
+                    tableData.push({ time: "", lyric: "/", ruby: "" });
+                } else {
+                    tableData.push({ time: "", lyric: line.trim(), ruby: "" });
+                    tableData.push({ time: "", lyric: "/", ruby: "" });
+                }
+            });
+
+            if (tableData.length === 1) {
+                // 仅有 <clear> 时补齐默认行
+                tableData.push({ time: "", lyric: "/", ruby: "" });
+            }
+
+            selectedIndex = 1;
+            renderTable();
+            updateHeaderTitle();
+            updateTimerDisplay();
+            return;
+        }
+
+        // === 标准 JoyHack 格式解析模式 ===
         const extractTag = (tagName) => {
-            const reg = new RegExp(`<${tagName}>([^\\r\\n]*)`, 'i');
-            const match = text.match(reg);
+            const reg = new RegExp(`<\\s*${tagName}\\s*>([^\\r\\n]*)`, 'i');
+            const match = cleanText.match(reg);
             return match ? match[1].trim() : '';
         };
 
@@ -1180,7 +1426,7 @@
             }
         }
 
-        const lines = text.split(/\r?\n/).filter(l => l.includes('<time>'));
+        const lines = cleanText.split(/\r?\n/).filter(l => l.includes('<time>'));
         lines.forEach(line => {
             const timeSplit = line.split('<time>');
             let wordsArr = [];
@@ -1420,6 +1666,380 @@
             parseJoyHackText(data.content, data.filePath || "", data.fileName || "");
         }
     });
+
+    /**
+     * 带有全方位编码嗅探的解码器（与 main.js 保持 100% 一致）
+     * 自动识别 UTF-16LE, UTF-16BE, UTF-8 (BOM/无BOM), 并回退到 CP932 / Shift_JIS
+     */
+    function decodeJapaneseBuffer(buffer) {
+        if (!buffer || buffer.length === 0) return '';
+
+        // 1. 嗅探 UTF-16LE BOM (Windows 记事本 Unicode)
+        if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xFE) {
+            return iconv.decode(buffer, 'utf16le');
+        }
+        // 2. 嗅探 UTF-16BE BOM
+        if (buffer.length >= 2 && buffer[0] === 0xFE && buffer[1] === 0xFF) {
+            return iconv.decode(buffer, 'utf16be');
+        }
+        // 3. 嗅探 UTF-8 BOM
+        if (buffer.length >= 3 && buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
+            return iconv.decode(buffer, 'utf8');
+        }
+
+        // 4. 字节流探测：如果前 100 字节内发现空字节，极大概率是无 BOM 的 UTF-16LE
+        let hasNull = false;
+        for (let i = 0; i < Math.min(buffer.length, 100); i++) {
+            if (buffer[i] === 0x00) {
+                hasNull = true;
+                break;
+            }
+        }
+        if (hasNull) return iconv.decode(buffer, 'utf16le');
+
+        // 5. 尝试严格模式的 UTF-8 解码
+        let strUtf8 = iconv.decode(buffer, 'utf8');
+        if (!strUtf8.includes('\uFFFD')) {
+            return strUtf8;
+        }
+
+        // 6. 终极回退方案：CP932 / Shift_JIS (日文系统标准格式)
+        return iconv.decode(buffer, 'cp932');
+    }
+
+    /**
+     * 打开本地歌词文件
+     */
+    function openSongFileFromPath(filePath) {
+        if (!filePath) return;
+        try {
+            const buffer = fs.readFileSync(filePath);
+            const content = decodeJapaneseBuffer(buffer);
+            const fileName = path.basename(filePath);
+            parseJoyHackText(content, filePath, fileName);
+        } catch (err) {
+            alert('歌词文件读取失败: ' + err.message);
+        }
+    }
+
+    /**
+     * 载入音视频媒体文件
+     */
+    function loadMediaFileFromPath(filePath) {
+        if (!filePath) return;
+        const normalizedPath = filePath.replace(/\\/g, '/');
+        audio.src = `file://${normalizedPath}`;
+        document.getElementById('metaSource').value = path.basename(filePath);
+        markDirty();
+        audio.load();
+    }
+
+    /**
+     * 文件拖拽载入交互 (Drag & Drop)
+     */
+    const dragOverlay = document.getElementById('dragOverlay');
+    let dragCounter = 0;
+
+    window.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter++;
+        if (dragOverlay) {
+            dragOverlay.classList.add('active');
+        }
+    });
+
+    window.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.dataTransfer) {
+            e.dataTransfer.dropEffect = 'copy';
+        }
+    });
+
+    window.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter--;
+        if (dragCounter <= 0) {
+            dragCounter = 0;
+            if (dragOverlay) {
+                dragOverlay.classList.remove('active');
+            }
+        }
+    });
+
+    window.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter = 0;
+        if (dragOverlay) {
+            dragOverlay.classList.remove('active');
+        }
+
+        const files = e.dataTransfer ? e.dataTransfer.files : null;
+        if (!files || files.length === 0) return;
+
+        // 获取拖入的文件路径
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const filePath = file.path;
+            if (!filePath) continue;
+
+            const ext = path.extname(filePath).toLowerCase();
+
+            if (ext === '.txt') {
+                if (isDirty) {
+                    if (!confirm('当前有未保存的修改，载入新歌词将覆盖当前内容，是否继续？')) {
+                        return;
+                    }
+                }
+                openSongFileFromPath(filePath);
+                return;
+            } else if (['.mp3', '.wav', '.m4a', '.mp4', '.mkv'].includes(ext)) {
+                loadMediaFileFromPath(filePath);
+                return;
+            }
+        }
+    });
+
+    /**
+     * ==========================================
+     * 補正値 聴音測定ウィザード (Offset Wizard) 逻辑
+     * ==========================================
+     */
+    let isWizardOpen = false;
+    let wizardMeasuredFixStr = "";
+
+    function timeCodeToFrames(tcStr) {
+        if (!tcStr) return 0;
+        const clean = tcStr.trim();
+        const parts = clean.split(':');
+        if (parts.length < 3) return 0;
+        const m = parseInt(parts[0], 10) || 0;
+        const s = parseInt(parts[1], 10) || 0;
+        const ff = parseInt(parts[2], 10) || 0;
+        return (m * 60 + s) * 60 + ff;
+    }
+
+    function framesToOffsetTimeCode(frames) {
+        const isNeg = frames < 0;
+        let absF = Math.abs(frames);
+        const totalSec = Math.floor(absF / 60);
+        const ff = absF % 60;
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec % 60;
+        const baseTc = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}:${String(ff).padStart(2, '0')}`;
+        return isNeg ? `-${baseTc}` : baseTc;
+    }
+
+    function openOffsetWizard() {
+        if (!audio.src || isNaN(audio.duration) || audio.duration === 0) {
+            alert('音声/動画メディアファイルが読み込まれていません。\n先に「メディア」の「参照」からメディアファイルを選択してください。');
+            return;
+        }
+
+        const select = document.getElementById('wizardLyricSelect');
+        select.innerHTML = '';
+
+        const tcRegex = /^\d{2}:\d{2}:\d{2}$/;
+        const candidateRows = [];
+
+        tableData.forEach((row, idx) => {
+            const time = (row.time || '').trim();
+            const lyric = (row.lyric || '').trim();
+            if (tcRegex.test(time) && lyric !== '<clear>' && !lyric.startsWith('<clear')) {
+                candidateRows.push({
+                    index: idx,
+                    time: time,
+                    lyric: lyric
+                });
+            }
+        });
+
+        if (candidateRows.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = "";
+            opt.textContent = "（有効な時間コードを持つ歌詞行がありません）";
+            select.appendChild(opt);
+            document.getElementById('wizardTargetTc').value = "00:00:00";
+        } else {
+            let selectedCandidateIdx = 0;
+            candidateRows.forEach((item, cIdx) => {
+                const opt = document.createElement('option');
+                opt.value = item.time;
+                const cleanLyric = item.lyric.replace(/[\r\n\t]/g, ' ');
+                opt.textContent = `[${item.time}] ${cleanLyric || '(空テキスト)'}`;
+                select.appendChild(opt);
+
+                if (item.index === selectedIndex) {
+                    selectedCandidateIdx = cIdx;
+                }
+            });
+
+            select.selectedIndex = selectedCandidateIdx;
+            document.getElementById('wizardTargetTc').value = candidateRows[selectedCandidateIdx].time;
+        }
+
+        wizardResetMeasurement();
+        updateWizardPlayerUI();
+
+        isWizardOpen = true;
+        document.getElementById('offsetWizardModal').classList.add('show');
+    }
+
+    function closeOffsetWizard() {
+        isWizardOpen = false;
+        document.getElementById('offsetWizardModal').classList.remove('show');
+        audio.pause();
+        updateTimerDisplay();
+        gridContainer.focus();
+    }
+
+    function onWizardSelectChange(val) {
+        if (val) {
+            document.getElementById('wizardTargetTc').value = val;
+            wizardCalculateOffset();
+        }
+    }
+
+    function onWizardTargetInput(val) {
+        wizardCalculateOffset();
+    }
+
+    function wizardTogglePlay() {
+        if (isNaN(audio.duration) || audio.duration === 0) return;
+        if (audio.paused) {
+            audio.play();
+        } else {
+            audio.pause();
+        }
+        updateWizardPlayerUI();
+    }
+
+    function wizardSeekRelative(deltaSec) {
+        if (isNaN(audio.duration)) return;
+        audio.currentTime = Math.max(0, Math.min(audio.duration, (audio.currentTime || 0) + deltaSec));
+        updateWizardPlayerUI();
+    }
+
+    function wizardSeekByPercent(val) {
+        if (!isNaN(audio.duration) && audio.duration > 0) {
+            audio.currentTime = (val / 100) * audio.duration;
+            updateWizardPlayerUI();
+        }
+    }
+
+    function updateWizardPlayerUI() {
+        const cur = audio.currentTime || 0;
+        const dur = audio.duration || 0;
+        const tc = secondsToTimeCode(cur);
+
+        const curTcElem = document.getElementById('wizardCurrentTc');
+        if (curTcElem) curTcElem.innerText = tc;
+
+        const btnPlay = document.getElementById('wizardPlayPauseBtn');
+        if (btnPlay) btnPlay.innerText = audio.paused ? "▶" : "❚❚";
+
+        const slider = document.getElementById('wizardProgressSlider');
+        if (slider) {
+            slider.value = dur > 0 ? (cur / dur) * 100 : 0;
+        }
+
+        updateTimerDisplay();
+    }
+
+    // 挂载到 audio 事件以实时更新向导 UI
+    const origAudioOnPlay = audio.onplay;
+    audio.onplay = () => {
+        if (origAudioOnPlay) origAudioOnPlay();
+        if (isWizardOpen) {
+            const btnPlay = document.getElementById('wizardPlayPauseBtn');
+            if (btnPlay) btnPlay.innerText = "❚❚";
+        }
+    };
+    const origAudioOnPause = audio.onpause;
+    audio.onpause = () => {
+        if (origAudioOnPause) origAudioOnPause();
+        if (isWizardOpen) {
+            const btnPlay = document.getElementById('wizardPlayPauseBtn');
+            if (btnPlay) btnPlay.innerText = "▶";
+        }
+    };
+    audio.addEventListener('timeupdate', () => {
+        if (isWizardOpen) {
+            updateWizardPlayerUI();
+        }
+    });
+
+    /**
+     * 捕获实测起唱时间并自动计算
+     */
+    function wizardCaptureActualTime() {
+        audio.pause();
+        updateWizardPlayerUI();
+
+        const actualTc = secondsToTimeCode(audio.currentTime || 0);
+        document.getElementById('wizardResActual').innerText = actualTc;
+
+        wizardCalculateOffset(actualTc);
+    }
+
+    function wizardCalculateOffset(forcedActualTc = null) {
+        const targetTc = (document.getElementById('wizardTargetTc').value || '').trim();
+        const actualSpan = document.getElementById('wizardResActual');
+        const actualTc = forcedActualTc || (actualSpan ? actualSpan.innerText : '');
+
+        document.getElementById('wizardResTarget').innerText = targetTc || '--:--:--';
+
+        const tcRegex = /^\d{2}:\d{2}:\d{2}$/;
+        if (!tcRegex.test(targetTc) || !tcRegex.test(actualTc)) {
+            document.getElementById('wizardResFix').innerText = "-00:00:00";
+            document.getElementById('wizardResNote').innerText = "目標または実測時間が無効です";
+            document.getElementById('wizardBtnApply').disabled = true;
+            wizardMeasuredFixStr = "";
+            return;
+        }
+
+        const targetFrames = timeCodeToFrames(targetTc);
+        const actualFrames = timeCodeToFrames(actualTc);
+
+        const offsetFrames = actualFrames - targetFrames;
+        const fixStr = framesToOffsetTimeCode(offsetFrames);
+        wizardMeasuredFixStr = fixStr;
+
+        document.getElementById('wizardResFix').innerText = fixStr;
+
+        const diffSeconds = Math.abs(offsetFrames) / 60.0;
+        let note = "";
+        if (offsetFrames === 0) {
+            note = "原歌词与实测完全一致（偏差 0 帧）";
+        } else if (offsetFrames > 0) {
+            note = `整体延迟 +${diffSeconds.toFixed(2)} 秒（实测开唱比原歌词晚 ${offsetFrames} 帧）`;
+        } else {
+            note = `整体提前 -${diffSeconds.toFixed(2)} 秒（实测开唱比原歌词早 ${Math.abs(offsetFrames)} 帧）`;
+        }
+
+        document.getElementById('wizardResNote').innerText = note;
+        document.getElementById('wizardBtnApply').disabled = false;
+    }
+
+    function wizardResetMeasurement() {
+        document.getElementById('wizardResActual').innerText = "--:--:--";
+        document.getElementById('wizardResFix').innerText = "-00:00:00";
+        document.getElementById('wizardResNote').innerText = "请在试听中听到起唱瞬间按 Enter 捕获";
+        document.getElementById('wizardBtnApply').disabled = true;
+        wizardMeasuredFixStr = "";
+        const targetTc = (document.getElementById('wizardTargetTc').value || '').trim();
+        document.getElementById('wizardResTarget').innerText = targetTc || '--:--:--';
+    }
+
+    function applyOffsetWizardResult() {
+        if (!wizardMeasuredFixStr) return;
+        document.getElementById('metaFix').value = wizardMeasuredFixStr;
+        markDirty();
+        closeOffsetWizard();
+    }
 
     renderTable();
     updateTimerDisplay();

@@ -28,9 +28,35 @@ ipcMain.on('CONFIRM_CLOSE_EDITOR', () => {
 });
 let currentQueue = [];
 let currentPitchVal = 0;
+let playHistory = [];
 
-// 配置文件路径持久化存储
+// 配置文件与点歌履历持久化存储
 const CONFIG_PATH = path.join(app.getPath('userData'), 'joyhack-config.json');
+const HISTORY_PATH = path.join(app.getPath('userData'), 'joyhack-history.json');
+
+function loadSavedHistory() {
+    try {
+        if (fs.existsSync(HISTORY_PATH)) {
+            const data = JSON.parse(fs.readFileSync(HISTORY_PATH, 'utf8'));
+            if (Array.isArray(data)) {
+                return data.slice(0, 100);
+            }
+        }
+    } catch (e) {
+        console.error("加载历史履历失败:", e);
+    }
+    return [];
+}
+
+function saveHistory() {
+    try {
+        fs.writeFileSync(HISTORY_PATH, JSON.stringify(playHistory, null, 2), 'utf8');
+    } catch (e) {
+        console.error("保存历史履历失败:", e);
+    }
+}
+
+playHistory = loadSavedHistory();
 
 function loadSavedConfig() {
     try {
@@ -259,6 +285,7 @@ expressApp.post('/api/queue', (req, res) => {
 
     currentQueue.push(songItem);
     io.emit('update-queue', currentQueue);
+    io.emit('song-booked-notify', songItem);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.json({ success: true, queue: currentQueue });
 });
@@ -266,6 +293,15 @@ expressApp.post('/api/queue', (req, res) => {
 expressApp.delete('/api/queue/:index', (req, res) => {
     const index = parseInt(req.params.index, 10);
     if (!isNaN(index) && index >= 0 && index < currentQueue.length) {
+        if (index === 0) {
+            const playedSong = { ...currentQueue[0], playedAt: Date.now() };
+            playHistory.unshift(playedSong);
+            if (playHistory.length > 100) {
+                playHistory = playHistory.slice(0, 100);
+            }
+            saveHistory();
+            io.emit('update-history', playHistory);
+        }
         currentQueue.splice(index, 1);
         io.emit('update-queue', currentQueue);
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -273,6 +309,20 @@ expressApp.delete('/api/queue/:index', (req, res) => {
     } else {
         res.status(400).json({ error: "索引无效" });
     }
+});
+
+// API: 履历管理
+expressApp.get('/api/history', (req, res) => {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.json(playHistory);
+});
+
+expressApp.delete('/api/history', (req, res) => {
+    playHistory = [];
+    saveHistory();
+    io.emit('update-history', playHistory);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.json({ success: true, history: playHistory });
 });
 
 expressApp.post('/api/queue/reorder', (req, res) => {
@@ -321,6 +371,7 @@ expressApp.get('/editor', (req, res) => {
 // Socket.io 实时同步
 io.on('connection', (socket) => {
     socket.emit('update-queue', currentQueue);
+    socket.emit('update-history', playHistory);
     socket.emit('broadcast-pitch', currentPitchVal);
 
     socket.on('send-command', (cmd) => {
@@ -368,7 +419,7 @@ function createEditorWindow() {
     });
     editorWindow.loadFile(path.join(__dirname, 'public', 'editor.html'));
 
-    ﻿/**
+    /**
  * 歌词文件编码检测与无损转换为标准 UTF-8 (BOM)
  */
 function fixSongBufferToUtf8(buffer) {
@@ -691,7 +742,7 @@ function createWindow() {
 
     mainWindow.loadFile(path.join(__dirname, 'public', 'player.html'));
 
-﻿    const template = [
+    const template = [
         {
             label: 'File',
             submenu: [
@@ -714,6 +765,12 @@ function createWindow() {
                     accelerator: 'CmdOrCtrl+,', 
                     click: () => {
                         mainWindow.webContents.send('TOGGLE_SETTINGS_MODAL');
+                    }
+                },
+                {
+                    label: '歌词文本显示设置...',
+                    click: () => {
+                        mainWindow.webContents.send('OPEN_LYRIC_STYLE_MODAL');
                     }
                 },
                 { type: 'separator' },

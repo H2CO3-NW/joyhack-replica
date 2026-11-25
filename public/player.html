@@ -60,13 +60,13 @@
 
         .karaoke-display { 
             position: absolute; bottom: 40px; left: 5%; width: 90%;
-            display: flex; flex-direction: column; justify-content: flex-end; gap: 12px;
+            display: flex; flex-direction: column; justify-content: flex-end; gap: 24px;
             z-index: 15; pointer-events: none; transition: height 0.2s ease;
         }
 
         .lyric-row { 
             font-size: 0;
-            height: 80px; line-height: 80px;
+            height: 90px; line-height: 90px;
             width: 100%; white-space: nowrap; transition: opacity 0.2s ease;
         }
         .row-align-left { text-align: left; }
@@ -77,6 +77,7 @@
         ruby { ruby-position: over; text-align: center; }
         rt { font-size: 20px; font-weight: bold; line-height: 1.0; }
 
+        .lyric-line-bg { display: inline-block; vertical-align: bottom; }
         .karaoke-word-wrapper { 
             position: relative; display: inline-block; line-height: 1.1; margin: 0; padding: 0; 
             font-size: 52px; font-weight: 900; letter-spacing: 0px; white-space: pre;
@@ -178,6 +179,31 @@
         #toastContainer { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
         .toast { background: rgba(0, 255, 255, 0.95); color: #000; padding: 12px 20px; font-weight: bold; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-size: 15px; opacity: 0; transform: translateY(-20px); transition: all 0.3s ease; }
         .toast.show { opacity: 1; transform: translateY(0); }
+
+        /* 歌词设置实时预览容器 */
+        .lyric-preview-box {
+            margin-top: 15px;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            border: 1px solid #555;
+            border-radius: 8px;
+            padding: 30px 20px 20px;
+            min-height: 140px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .lyric-preview-tag {
+            position: absolute;
+            top: 6px;
+            left: 10px;
+            font-size: 11px;
+            color: #aaa;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
     </style>
 </head>
 <body>
@@ -221,6 +247,7 @@
             <div class="tab-nav">
                 <button class="tab-btn active" onclick="switchTab('general')">常规设置</button>
                 <button class="tab-btn" onclick="switchTab('titleStyle')">歌曲元信息显示画面设定</button>
+                <button class="tab-btn" onclick="switchTab('lyricStyle')">歌词文本显示设置</button>
             </div>
 
             <!-- Tab 1: 常规设置 -->
@@ -357,7 +384,63 @@
                 </div>
             </div>
 
+            <!-- Tab 3: 歌词文本显示设置 -->
+            <div class="tab-content" id="tabLyricStyle">
+                <div class="form-group" style="display: flex; align-items: center; gap: 10px; background: #181818; padding: 12px; border-radius: 6px;">
+                    <input type="checkbox" id="lyricBgEnabled" style="width: 18px; height: 18px; accent-color: #00ffff; cursor: pointer;" onchange="updateLyricStyleFromForm()">
+                    <label for="lyricBgEnabled" style="font-size: 14px; font-weight: bold; color: #00ffff; cursor: pointer; user-select: none;">启用歌词垫底背景（防止复杂背景MV遮挡干扰）</label>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">背景底色与透明度：</label>
+                    <div class="input-group" style="gap: 15px;">
+                        <input type="color" id="lyricBgColorPicker" class="input-color" value="#000000" onchange="syncColorInput(this, 'lyricBgColorText'); updateLyricStyleFromForm();">
+                        <input type="text" id="lyricBgColorText" class="input-text" value="#000000" style="width: 90px;" onchange="syncColorPicker(this, 'lyricBgColorPicker'); updateLyricStyleFromForm();">
+                        <span style="font-size: 13px; color: #ccc;">透明度:</span>
+                        <input type="range" id="lyricBgOpacitySlider" min="0" max="1" step="0.05" value="0.6" style="flex: 1; accent-color: #00ffff; cursor: pointer;" oninput="document.getElementById('lyricBgOpacityVal').innerText = Math.round(this.value * 100) + '%'; updateLyricStyleFromForm();">
+                        <span id="lyricBgOpacityVal" style="font-family: monospace; font-size: 13px; color: #00ffff; width: 45px;">60%</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">背景框圆角大小：</label>
+                    <div class="input-group" style="gap: 15px;">
+                        <input type="range" id="lyricBorderRadiusSlider" min="0" max="24" step="1" value="8" style="flex: 1; accent-color: #00ffff; cursor: pointer;" oninput="document.getElementById('lyricBorderRadiusVal').innerText = this.value + 'px'; updateLyricStyleFromForm();">
+                        <span id="lyricBorderRadiusVal" style="font-family: monospace; font-size: 13px; color: #00ffff; width: 45px;">8px</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">歌词显示字体：</label>
+                    <div class="input-group" style="gap: 10px; margin-bottom: 8px;">
+                        <select id="lyricFontFamilySelect" class="select-custom" style="flex: 1;" onchange="onLyricFontSelectChange(this.value)">
+                            <option value='"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif'>默认日中黑体 (Hiragino / MS PGothic / 微软雅黑)</option>
+                            <option value='"MS PGothic", "MS UI Gothic", sans-serif'>MS PGothic (经典日系K88/卡拉OK风)</option>
+                            <option value='"Meiryo", "メイリオ", sans-serif'>Meiryo (清晰圆润日系无衬线)</option>
+                            <option value='"Yu Gothic", "游ゴシック", sans-serif'>Yu Gothic (游黑体)</option>
+                            <option value='"Microsoft YaHei", "微软雅黑", sans-serif'>Microsoft YaHei (微软雅黑)</option>
+                            <option value='"SimHei", "黑体", sans-serif'>SimHei (中文经典黑体)</option>
+                            <option value='sans-serif'>系统默认无衬线 (sans-serif)</option>
+                            <option value='custom'>自定义字体名称...</option>
+                        </select>
+                    </div>
+                    <input type="text" id="lyricFontFamilyCustom" class="input-text" style="width: 100%; display: none;" placeholder="输入自定义字体名称，如: Arial, 'Noto Sans JP', sans-serif" oninput="updateLyricStyleFromForm()">
+                </div>
+
+                <!-- 实时预览区 -->
+                <div class="form-group">
+                    <label class="form-label">实时效果预览：</label>
+                    <div class="lyric-preview-box">
+                        <div class="lyric-preview-tag">LIVE PREVIEW</div>
+                        <div id="lyricLivePreviewContainer" style="display: flex; flex-direction: column; gap: 12px; align-items: center; width: 100%;">
+                            <!-- 动态注入预览双层卡拉OK行 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="modal-footer" id="modalFooter">
+                <button class="btn-reset" id="resetLyricStyleBtn" style="display:none;" onclick="resetDefaultLyricStyles()">重置歌词样式为默认值</button>
                 <button class="btn-reset" id="resetStyleBtn" style="display:none;" onclick="resetDefaultTitleStyles()">重置为默认值</button>
                 <button class="btn-preview" id="previewStyleBtn" style="display:none;" onclick="previewTitleOverlay()">👁 预览 Title 画面</button>
             </div>
@@ -405,6 +488,149 @@
 
     let activeMainRowsCount = -1;
     let activeHasSubSlot = false;
+
+    // 歌词字幕文字垫底背景与字体可配置变量
+    const DEFAULT_LYRIC_STYLE = {
+        enabled: false,
+        bgColor: '#000000',
+        bgOpacity: 0.6,
+        borderRadius: 8,
+        fontFamily: '"Hiragino Kaku Gothic ProN", "MS PGothic", "Microsoft YaHei", sans-serif'
+    };
+
+    let lyricStyleConfig = loadLyricStyleConfig();
+
+    function loadLyricStyleConfig() {
+        try {
+            const saved = localStorage.getItem('joyhack_lyric_style');
+            if (saved) {
+                return Object.assign({}, DEFAULT_LYRIC_STYLE, JSON.parse(saved));
+            }
+        } catch (e) {
+            console.error(e);
+        }
+        return JSON.parse(JSON.stringify(DEFAULT_LYRIC_STYLE));
+    }
+
+    function saveLyricStyleConfig() {
+        try {
+            localStorage.setItem('joyhack_lyric_style', JSON.stringify(lyricStyleConfig));
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    function applyLyricStyleConfigToForm() {
+        document.getElementById('lyricBgEnabled').checked = !!lyricStyleConfig.enabled;
+        document.getElementById('lyricBgColorPicker').value = lyricStyleConfig.bgColor || '#000000';
+        document.getElementById('lyricBgColorText').value = lyricStyleConfig.bgColor || '#000000';
+        
+        const opacity = lyricStyleConfig.bgOpacity !== undefined ? lyricStyleConfig.bgOpacity : 0.6;
+        document.getElementById('lyricBgOpacitySlider').value = opacity;
+        document.getElementById('lyricBgOpacityVal').innerText = Math.round(opacity * 100) + '%';
+        
+        const radius = lyricStyleConfig.borderRadius !== undefined ? lyricStyleConfig.borderRadius : 8;
+        document.getElementById('lyricBorderRadiusSlider').value = radius;
+        document.getElementById('lyricBorderRadiusVal').innerText = radius + 'px';
+
+        const fontSelect = document.getElementById('lyricFontFamilySelect');
+        const customFontInput = document.getElementById('lyricFontFamilyCustom');
+        const currentFont = lyricStyleConfig.fontFamily || DEFAULT_LYRIC_STYLE.fontFamily;
+        
+        let found = false;
+        for (let i = 0; i < fontSelect.options.length; i++) {
+            if (fontSelect.options[i].value === currentFont) {
+                fontSelect.selectedIndex = i;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            fontSelect.value = 'custom';
+            customFontInput.style.display = 'block';
+            customFontInput.value = currentFont;
+        } else {
+            customFontInput.style.display = 'none';
+        }
+        renderLyricLivePreview();
+    }
+
+    function updateLyricStyleFromForm() {
+        lyricStyleConfig.enabled = document.getElementById('lyricBgEnabled').checked;
+        lyricStyleConfig.bgColor = document.getElementById('lyricBgColorText').value || '#000000';
+        lyricStyleConfig.bgOpacity = parseFloat(document.getElementById('lyricBgOpacitySlider').value) || 0;
+        lyricStyleConfig.borderRadius = parseInt(document.getElementById('lyricBorderRadiusSlider').value, 10) || 0;
+
+        const fontSelect = document.getElementById('lyricFontFamilySelect');
+        if (fontSelect.value === 'custom') {
+            lyricStyleConfig.fontFamily = document.getElementById('lyricFontFamilyCustom').value || 'sans-serif';
+        } else {
+            lyricStyleConfig.fontFamily = fontSelect.value;
+        }
+
+        saveLyricStyleConfig();
+        renderLyricLivePreview();
+    }
+
+    function onLyricFontSelectChange(val) {
+        const customInput = document.getElementById('lyricFontFamilyCustom');
+        if (val === 'custom') {
+            customInput.style.display = 'block';
+            customInput.focus();
+        } else {
+            customInput.style.display = 'none';
+        }
+        updateLyricStyleFromForm();
+    }
+
+    function resetDefaultLyricStyles() {
+        lyricStyleConfig = JSON.parse(JSON.stringify(DEFAULT_LYRIC_STYLE));
+        saveLyricStyleConfig();
+        applyLyricStyleConfigToForm();
+        showToast("已重置歌词显示设置与背景为默认值");
+    }
+
+    function renderLyricLivePreview() {
+        const container = document.getElementById('lyricLivePreviewContainer');
+        if (!container) return;
+
+        const bgStyle = (lyricStyleConfig.enabled && lyricStyleConfig.bgOpacity > 0)
+            ? `background: ${hexToRgba(lyricStyleConfig.bgColor, lyricStyleConfig.bgOpacity)}; border-radius: ${lyricStyleConfig.borderRadius}px; padding: 2px 14px; box-decoration-break: clone; -webkit-box-decoration-break: clone;`
+            : '';
+        const fontStyle = lyricStyleConfig.fontFamily
+            ? `font-family: ${lyricStyleConfig.fontFamily};`
+            : '';
+        const wrapperStyle = (bgStyle || fontStyle) ? ` style="${bgStyle} ${fontStyle}"` : '';
+
+        // 双层卡拉OK歌词结构：模拟一个正在播放擦色的主行，以及一个预告行
+        const baseColor = '#FFFFFF';
+        const baseEdge = '#000000';
+        const activeColor = '#FF0033';
+        const activeEdge = '#FFFFFF';
+        const baseShadow = getSmoothShadow(baseEdge) + ', 0 4px 12px rgba(0,0,0,0.85)';
+        const activeShadow = getSmoothShadow(activeEdge) + ', 0 0 16px ' + activeColor + ', 0 4px 8px rgba(0,0,0,0.9)';
+
+        // 模拟词语 1: 已唱过(clip 100%)
+        const word1 = `<div class="karaoke-word-wrapper" style="font-size: 32px;"><div class="karaoke-word-base" style="color:${baseColor}; text-shadow:${baseShadow};">心</div><div class="karaoke-word-active" style="color:${activeColor}; text-shadow:${activeShadow}; --clip: 100%;">心</div></div>`;
+        // 模拟词语 2: 正在擦色(clip 55%) 带振假名 ruby
+        const rubyBase = `<ruby>弾<rt style="font-size:14px; color:${baseColor}; text-shadow:${baseShadow};">はじ</rt></ruby>`;
+        const rubyActive = `<ruby>弾<rt style="font-size:14px; color:${activeColor}; text-shadow:${activeShadow};">はじ</rt></ruby>`;
+        const word2 = `<div class="karaoke-word-wrapper" style="font-size: 32px;"><div class="karaoke-word-base" style="color:${baseColor}; text-shadow:${baseShadow};">${rubyBase}</div><div class="karaoke-word-active" style="color:${activeColor}; text-shadow:${activeShadow}; --clip: 55%;">${rubyActive}</div></div>`;
+        // 模拟词语 3: 未开唱(clip 0%)
+        const word3 = `<div class="karaoke-word-wrapper" style="font-size: 32px;"><div class="karaoke-word-base" style="color:${baseColor}; text-shadow:${baseShadow};">むメロディ</div><div class="karaoke-word-active" style="color:${activeColor}; text-shadow:${activeShadow}; --clip: 0%;">むメロディ</div></div>`;
+
+        // 模拟下一行（半透明预备）
+        const wordNext = `<div class="karaoke-word-wrapper" style="font-size: 32px;"><div class="karaoke-word-base" style="color:${baseColor}; text-shadow:${baseShadow};">今宵の歌声よ 永遠に</div><div class="karaoke-word-active" style="color:${activeColor}; text-shadow:${activeShadow}; --clip: 0%;">今宵の歌声よ 永遠に</div></div>`;
+
+        container.innerHTML = `
+            <div style="width: 100%; text-align: center; height: 48px; line-height: 48px;">
+                <span class="lyric-line-bg"${wrapperStyle}>${word1}${word2}${word3}</span>
+            </div>
+            <div style="width: 100%; text-align: center; height: 48px; line-height: 48px; opacity: 0.5;">
+                <span class="lyric-line-bg"${wrapperStyle}>${wordNext}</span>
+            </div>
+        `;
+    }
 
     function clearKaraokeDisplay() {
         parsedPhrases = [];
@@ -526,17 +752,24 @@
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
 
+        document.getElementById('previewStyleBtn').style.display = 'none';
+        document.getElementById('resetStyleBtn').style.display = 'none';
+        document.getElementById('resetLyricStyleBtn').style.display = 'none';
+
         if (tabName === 'general') {
             document.querySelectorAll('.tab-btn')[0].classList.add('active');
             document.getElementById('tabGeneral').classList.add('active');
-            document.getElementById('previewStyleBtn').style.display = 'none';
-            document.getElementById('resetStyleBtn').style.display = 'none';
-        } else {
+        } else if (tabName === 'titleStyle') {
             document.querySelectorAll('.tab-btn')[1].classList.add('active');
             document.getElementById('tabTitleStyle').classList.add('active');
             document.getElementById('previewStyleBtn').style.display = 'inline-block';
             document.getElementById('resetStyleBtn').style.display = 'inline-block';
             applyStyleConfigToForm();
+        } else if (tabName === 'lyricStyle') {
+            document.querySelectorAll('.tab-btn')[2].classList.add('active');
+            document.getElementById('tabLyricStyle').classList.add('active');
+            document.getElementById('resetLyricStyleBtn').style.display = 'inline-block';
+            applyLyricStyleConfigToForm();
         }
     }
 
@@ -656,7 +889,7 @@
         applyPitchShift(pitchVal);
     });
 
-    function showToast(message) {
+    function showToast(message, duration = 2500) {
         const container = document.getElementById('toastContainer');
         const toast = document.createElement('div');
         toast.className = 'toast';
@@ -667,8 +900,15 @@
         setTimeout(() => {
             toast.classList.remove('show');
             setTimeout(() => toast.remove(), 300);
-        }, 2500);
+        }, duration);
     }
+
+    socket.on('song-booked-notify', (song) => {
+        if (!song || !song.title) return;
+        const singerStr = (song.singer && song.singer !== 'N/A') ? ` (${song.singer})` : '';
+        const pitchStr = song.pitch ? ` [Key: ${song.pitch > 0 ? '+' + song.pitch : song.pitch}]` : '';
+        showToast(`🎵 已点播: 《${song.title}》${singerStr}${pitchStr}`, 3000);
+    });
 
     async function loadSettingsConfig() {
         try {
@@ -715,10 +955,10 @@
         }
     }
 
-    function openSettingsModal() {
+    function openSettingsModal(defaultTab = 'general') {
         settingsModal.classList.add('show');
         loadSettingsConfig();
-        switchTab('general');
+        switchTab(defaultTab);
     }
 
     function closeSettingsModal() {
@@ -734,8 +974,12 @@
         if (settingsModal.classList.contains('show')) {
             closeSettingsModal();
         } else {
-            openSettingsModal();
+            openSettingsModal('general');
         }
+    });
+
+    ipcRenderer.on('OPEN_LYRIC_STYLE_MODAL', () => {
+        openSettingsModal('lyricStyle');
     });
 
     function decodeJapaneseBuffer(buffer) {
@@ -879,6 +1123,8 @@
                 }
                 video.style.display = 'none';
                 vocalAudio.pause();
+                playBtn.innerText = "播放";
+                playBtn.disabled = true;
             }
         } catch (e) {
             console.error("处理播放队列失败:", e);
@@ -1442,8 +1688,23 @@
         return `-1.5px -1.5px 0 ${color}, 1.5px -1.5px 0 ${color}, -1.5px 1.5px 0 ${color}, 1.5px 1.5px 0 ${color}, -2px 0 0 ${color}, 2px 0 0 ${color}, 0 -2px 0 ${color}, 0 2px 0 ${color}, -1px -2px 0 ${color}, 1px -2px 0 ${color}, -1px 2px 0 ${color}, 1px 2px 0 ${color}`;
     }
 
+    function hexToRgba(hex, alpha) {
+        let c = hex.replace('#', '');
+        if (c.length === 3) c = c.split('').map(x => x + x).join('');
+        const num = parseInt(c, 16);
+        return `rgba(${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}, ${alpha})`;
+    }
+
     function buildLineHtml(lineData) {
-        return lineData.words.map((w, idx) => {
+        const bgStyle = (lyricStyleConfig.enabled && lyricStyleConfig.bgOpacity > 0)
+            ? `background: ${hexToRgba(lyricStyleConfig.bgColor, lyricStyleConfig.bgOpacity)}; border-radius: ${lyricStyleConfig.borderRadius}px; padding: 2px 14px; box-decoration-break: clone; -webkit-box-decoration-break: clone;`
+            : '';
+        const fontStyle = lyricStyleConfig.fontFamily
+            ? `font-family: ${lyricStyleConfig.fontFamily};`
+            : '';
+        const wrapperStyle = (bgStyle || fontStyle) ? ` style="${bgStyle} ${fontStyle}"` : '';
+
+        const wordsHtml = lineData.words.map((w, idx) => {
             if (w.isEmpty) {
                 return '';
             }
@@ -1474,6 +1735,8 @@
 
             return `<div class="karaoke-word-wrapper" data-widx="${idx}"><div class="karaoke-word-base" style="color:${c.fillBefore}; text-shadow:${baseShadow};">${baseInner}</div><div class="karaoke-word-active" style="color:${c.fillAfter}; text-shadow:${activeShadow};">${activeInner}</div></div>`;
         }).join("");
+
+        return `<span class="lyric-line-bg"${wrapperStyle}>${wordsHtml}</span>`;
     }
 
     function togglePlay() {
@@ -1491,7 +1754,7 @@
         } else {
             video.pause();
             if (vocalAudio.src) vocalAudio.pause();
-            playBtn.innerText = "暂停";
+            playBtn.innerText = "播放";
             hud.innerText = `${currentMetadata.title} [状态: 已暂停]`;
         }
     }
